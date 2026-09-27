@@ -100,8 +100,12 @@ and preferences. It references `auth.users`; it stores no passwords. Users are
 created only from trusted `app_metadata` provided by administrative provisioning.
 `wabi_inventory` and `wabi_customers` each store one record per unique ID, with
 queryable columns and the complete original record in JSONB. `wabi_sales`,
-`wabi_rentals`, and `wabi_transactions` store their respective records by ID.
-`wabi_shop_meta` stores settings and the version used for atomic conflict checks.
+`wabi_rentals`, and `wabi_transactions` store their record fields as typed columns
+(including dates, customer/item IDs, amounts, payment details, and notes), with
+no JSON payload column. `wabi_shop_meta` stores the shop name, late-fee amount,
+and version/audit fields as columns. The schema backfills existing payload and
+settings JSON before dropping those JSON columns, and aborts without dropping
+them if it finds unrecognized fields.
 The schema migrates all records from the old `wabi_kv` snapshot and removes that
 table after a successful copy. If `wabi_kv` contains unexpected keys, migration
 stops without removing it. All application tables deny direct browser access

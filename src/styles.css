@@ -521,6 +521,74 @@ main {
   outline: none;
 }
 
+.item-picker {
+  position: relative;
+}
+
+.item-picker-options {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.item-picker-option {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  color: var(--ink);
+  background: var(--surface);
+  text-align: left;
+}
+
+.item-picker-option:hover,
+.item-picker-option[aria-selected="true"] {
+  background: var(--accent-soft);
+}
+
+.item-picker-option>span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.item-picker-option>span>strong,
+.item-picker-option>span>span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.item-picker-option>span>strong {
+  font-size: 12px;
+}
+
+.item-picker-option>span>span,
+.item-picker-option small,
+.item-picker-empty {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.item-picker-option small {
+  flex-shrink: 0;
+}
+
+.item-picker-empty {
+  padding: 12px;
+}
+
 .welcome-banner {
   display: flex;
   align-items: center;

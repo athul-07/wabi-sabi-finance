@@ -182,14 +182,31 @@ function CustomerFields({ db, form, set }) {
 function ItemPicker({ db, value, onChange, label = "Item" }) {
   const selected = db.inventory.find((i) => i.id === value);
   const [query, setQuery] = useState(selected ? `${selected.id} · ${selected.name}` : "");
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (selected) setQuery(`${selected.id} · ${selected.name}`);
+    else if (!value && !open) setQuery("");
+  }, [selected?.id, selected?.name, value, open]);
   const items = db.inventory.filter((i) => available(db, i) > 0 || i.id === value);
-  const choose = (text) => {
-    setQuery(text);
-    const item = items.find((i) => `${i.id} · ${i.name}` === text);
-    onChange(item?.id || "");
+  const normalizedQuery = query.trim().toLowerCase();
+  const matches = items.filter((item) => !normalizedQuery || `${item.id} ${item.name}`.toLowerCase().includes(normalizedQuery));
+  const choose = (item) => {
+    setQuery(`${item.id} · ${item.name}`);
+    setOpen(false);
+    onChange(item.id);
   };
-  return (<Field label={label} hint="Type an item ID or name to search."><TextInput list="inventory-items" value={query} onChange={(e) => choose(e.target.value)} placeholder="Search items" />
-    <datalist id="inventory-items">{items.map((i) => <option key={i.id} value={`${i.id} · ${i.name}`} />)}</datalist>
+  return (<Field label={label} hint="Type an item ID or name to search.">
+    <div className="item-picker">
+      <TextInput aria-label={label} role="combobox" aria-autocomplete="list" aria-expanded={open} aria-controls="inventory-item-options" value={query}
+        onFocus={() => setOpen(true)} onBlur={() => setOpen(false)} onChange={(e) => { setQuery(e.target.value); onChange(""); setOpen(true); }}
+        onKeyDown={(e) => { if (e.key === "Escape") setOpen(false); }} placeholder="Type an item ID or name" autoComplete="off" />
+      {open && <div className="item-picker-options" id="inventory-item-options" role="listbox">
+        {matches.length ? matches.map((item) => <button key={item.id} type="button" role="option" aria-selected={item.id === value}
+          className="item-picker-option" onMouseDown={(e) => e.preventDefault()} onClick={() => choose(item)}>
+          <span><strong>{item.id}</strong><span>{item.name}</span></span><small>{available(db, item)} available</small>
+        </button>) : <div className="item-picker-empty">No matching items</div>}
+      </div>}
+    </div>
   </Field>);
 }
 function RecordFilters({ search, setSearch, searchLabel, status, setStatus, statusLabel, statuses }) {

@@ -15,9 +15,9 @@ test('Postgres schema creates trusted profiles atomically, protects data and che
       insert into public.wabi_users values ('legacy-owner', 'Legacy Owner', 'retained-hash', 'admin', '');
       create table public.wabi_kv (k text primary key, v jsonb not null);`);
     const shopData = structuredClone(seed);
-    shopData.sales = [{ id: 'SALE-TEST', itemId: seed.inventory[0].id, qty: 1, unitPrice: 100, received: 100 }];
-    shopData.rentals = [{ id: 'RENT-TEST', itemId: seed.inventory[1].id, pickup: '2026-09-25', returnDue: '2026-09-26' }];
-    shopData.transactions = [{ id: 'TX-TEST', date: '2026-09-25', type: 'Income', amount: 100 }];
+    shopData.sales = [{ id: 'SALE-TEST', date: '2026-09-24', phone: '9876543210', customer: 'Test Customer', itemId: seed.inventory[0].id, qty: 2, unitPrice: 100, discount: 5, mode: 'UPI', received: 150, notes: 'sale note' }];
+    shopData.rentals = [{ id: 'RENT-TEST', bookingDate: '2026-09-24', phone: '9000000000', customer: 'Rental Customer', itemId: seed.inventory[1].id, eventDate: '2026-09-25', pickup: '2026-09-25', returnDue: '2026-09-26', actualReturn: '', rentalFee: 3200, deposit: 1500, damage: 0, mode: 'Cash', received: 1000, depositRefunded: 0, notes: 'rental note' }];
+    shopData.transactions = [{ id: 'TX-TEST', date: '2026-09-25', type: 'Income', category: 'Rentals', desc: 'Booking RENT-TEST', party: 'Rental Customer', itemId: seed.inventory[1].id, mode: 'Cash', account: 'Till', amount: 100, notes: 'transaction note' }];
     await db.query('insert into public.wabi_kv values ($1, $2)', ['shop', { data: shopData, version: 1, updatedAt: '2026-09-25T10:00:00.000Z', updatedBy: 'owner' }]);
     const schema = fs.readFileSync(path.join(__dirname, '../supabase/schema.sql'), 'utf8');
     await db.exec(schema);
@@ -30,13 +30,18 @@ test('Postgres schema creates trusted profiles atomically, protects data and che
     assert.equal((await db.query('select count(*)::int as n from wabi_sales where is_active')).rows[0].n, shopData.sales.length);
     assert.equal((await db.query('select count(*)::int as n from wabi_rentals where is_active')).rows[0].n, shopData.rentals.length);
     assert.equal((await db.query('select count(*)::int as n from wabi_transactions where is_active')).rows[0].n, shopData.transactions.length);
+    for (const [table, column] of [['wabi_sales', 'payload'], ['wabi_rentals', 'payload'], ['wabi_transactions', 'payload'], ['wabi_shop_meta', 'settings']]) {
+      assert.equal((await db.query('select count(*)::int as n from information_schema.columns where table_schema = $1 and table_name = $2 and column_name = $3', ['public', table, column])).rows[0].n, 0);
+    }
+    assert.equal((await db.query('select item_id, qty, unit_price, received from wabi_sales where id = $1', ['SALE-TEST'])).rows[0].item_id, seed.inventory[0].id);
+    assert.equal(Number((await db.query('select amount from wabi_transactions where id = $1', ['TX-TEST'])).rows[0].amount), 100);
     const backfilled = (await db.query('select wabi_get_shop() as shop')).rows[0].shop;
     assert.equal(backfilled.version, 1);
     assert.equal(backfilled.updatedBy, 'owner');
     assert.equal(backfilled.data.inventory.length, shopData.inventory.length);
-    assert.equal(backfilled.data.sales[0].id, 'SALE-TEST');
-    assert.equal(backfilled.data.rentals[0].id, 'RENT-TEST');
-    assert.equal(backfilled.data.transactions[0].id, 'TX-TEST');
+    assert.deepEqual(backfilled.data.sales, shopData.sales);
+    assert.deepEqual(backfilled.data.rentals, shopData.rentals);
+    assert.deepEqual(backfilled.data.transactions, shopData.transactions);
     const saved = { data: { ...shopData, inventory: [{ ...shopData.inventory[0], salePrice: 9999, discount: 12 }], customers: [] }, version: 2, updatedAt: '2026-09-26T10:00:00.000Z', updatedBy: 'owner' };
     assert.equal((await db.query('select wabi_save_shop($1::jsonb, $2::integer) as saved', [saved, 1])).rows[0].saved, true);
     assert.equal(Number((await db.query('select sale_price from wabi_inventory where id = $1', [seed.inventory[0].id])).rows[0].sale_price), 9999);
@@ -90,6 +95,7 @@ test('Postgres schema removes the unused legacy user table only when empty', asy
     assert.deepEqual(shop.data.inventory, []);
     assert.deepEqual(shop.data.customers, []);
     assert.equal(shop.data.settings.shopName, 'Wabi Sabi');
+    assert.equal((await db.query('select shop_name, late_fee_per_day from wabi_shop_meta where singleton')).rows[0].shop_name, 'Wabi Sabi');
   } finally { await db.close(); }
 });
 

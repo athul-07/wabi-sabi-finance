@@ -154,7 +154,8 @@ test('browser: sales, customer reuse, ledger, rentals, return, persistence, and 
     await page.getByRole('button', { name: 'New sale', exact: true }).click();
     await page.getByLabel('Phone', { exact: true }).fill('9876543210');
     await expect(page.getByLabel('Customer name')).toHaveValue('Test Customer');
-    await page.getByLabel('Item', { exact: true }).fill('WS-001 · Test outfit 1');
+    await page.getByLabel('Item', { exact: true }).fill('WS-001');
+    await page.getByRole('option', { name: /WS-001 Test outfit 1/ }).click();
     await page.getByLabel('Amount received').fill('16400');
     await page.getByRole('button', { name: 'Save sale', exact: true }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -199,7 +200,8 @@ test('browser: sales, customer reuse, ledger, rentals, return, persistence, and 
     await page.getByRole('button', { name: 'New rental', exact: true }).click();
     await page.getByLabel('Phone', { exact: true }).fill('9000000000');
     await page.getByLabel('Customer name').fill('Browser Customer');
-    await page.getByLabel('Item', { exact: true }).fill('WS-002 · Test outfit 2');
+    await page.getByLabel('Item', { exact: true }).fill('WS-002');
+    await page.getByRole('option', { name: /WS-002 Test outfit 2/ }).click();
     await expect(page.getByLabel('Rental fee')).toHaveValue('3200');
     await expect(page.getByLabel('Rental fee')).toHaveAttribute('readonly', '');
     await expect(page.getByLabel('Security deposit')).toHaveValue('1500');
