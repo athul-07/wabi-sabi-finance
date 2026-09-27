@@ -28,6 +28,14 @@ export default function Overview({ db, me, onNavigate, canAccess, canCreate, met
   const dailyRows = tx.filter(t => (t.date || '').slice(0, 10) === day).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   const dailyIncome = dailyRows.filter(t => t.type === 'Income').reduce((n, t) => n + Number(t.amount || 0), 0);
   const dailyExpense = dailyRows.filter(t => t.type === 'Expense').reduce((n, t) => n + Number(t.amount || 0), 0);
+  const dailyModeTotals = mode => {
+    const rows = dailyRows.filter(t => t.mode === mode);
+    const income = rows.filter(t => t.type === 'Income').reduce((n, t) => n + Number(t.amount || 0), 0);
+    const expense = rows.filter(t => t.type === 'Expense').reduce((n, t) => n + Number(t.amount || 0), 0);
+    return { income, expense, net: income - expense };
+  };
+  const dailyCash = dailyModeTotals('Cash');
+  const dailyUpi = dailyModeTotals('UPI');
   const sum = (type, period = month) => tx.filter(t => t.type === type && monthOf(t.date) === period).reduce((n, t) => n + Number(t.amount || 0), 0);
   const income = sum('Income'), expense = sum('Expense');
   const receivable = db.sales.reduce((n, s) => n + saleBalance(s), 0) + db.rentals.reduce((n, r) => n + Math.max(0, rentalCharges(db, r) - Number(r.received || 0)), 0);
@@ -67,7 +75,13 @@ export default function Overview({ db, me, onNavigate, canAccess, canCreate, met
         <div><h3>Daily transactions</h3><p>{new Date(`${day}T12:00:00`).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} · {dailyRows.length} entries</p></div>
         <label className="month-picker"><CalendarClock size={16} /><span className="sr-only">Dashboard day</span><input aria-label="Dashboard day" type="date" value={day} onChange={e => setDay(e.target.value)} /></label>
       </div>
-      <div className="daily-summary"><div><span>Daily income</span><strong>{inr(dailyIncome)}</strong></div><div><span>Daily expenses</span><strong>{inr(dailyExpense)}</strong></div><div><span>Net for day</span><strong>{inr(dailyIncome - dailyExpense)}</strong></div></div>
+      <div className="daily-summary">
+        <div><span>Daily income</span><strong>{inr(dailyIncome)}</strong></div>
+        <div><span>Daily expenses</span><strong>{inr(dailyExpense)}</strong></div>
+        <div><span>Net for day</span><strong>{inr(dailyIncome - dailyExpense)}</strong></div>
+        <div><span>Cash</span><strong>{inr(dailyCash.net)}</strong><small>In {inr(dailyCash.income)} · Out {inr(dailyCash.expense)}</small></div>
+        <div><span>UPI</span><strong>{inr(dailyUpi.net)}</strong><small>In {inr(dailyUpi.income)} · Out {inr(dailyUpi.expense)}</small></div>
+      </div>
       {dailyRows.length ? <div className="activity-list">{dailyRows.map(t => <div className="activity-row" key={t.id}><span className={`metric-icon ${t.type === 'Income' ? 'green' : 'orange'}`}>{t.type === 'Income' ? <ArrowDownLeft size={18} /> : <ArrowUpRight size={18} />}</span><div className="activity-copy"><strong>{t.desc || t.category || t.type}</strong><span>{t.party || t.category} · {t.date}</span></div><div className="activity-amount"><strong style={{ color: t.type === 'Income' ? 'var(--green)' : 'var(--ink)' }}>{t.type === 'Income' ? '+' : '−'}{inr(t.amount)}</strong><span>{t.mode || 'Unspecified'}</span></div></div>)}</div> : <div className="empty-state"><span className="empty-icon"><ReceiptText size={24} /></span><strong>No transactions on this date</strong><p>Payments and expenses for the selected date will appear here.</p></div>}
     </section>
     <div className="dashboard-charts">

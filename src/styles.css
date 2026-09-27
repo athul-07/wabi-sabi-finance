@@ -1029,7 +1029,7 @@ main {
 
 .daily-summary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 14px;
   padding: 12px 0 16px;
   border-bottom: 1px solid var(--line);
@@ -1051,6 +1051,12 @@ main {
 .daily-summary strong {
   font-size: 13px;
   font-weight: 600;
+  white-space: nowrap;
+}
+
+.daily-summary small {
+  color: var(--muted);
+  font-size: 10px;
   white-space: nowrap;
 }
 

@@ -90,7 +90,7 @@ function rentalStatus(r) {
   return "Booked";
 }
 function rentalLateFee(db, r) { if (!r.returnDue || !r.actualReturn) return 0; return Math.max(0, daysBetween(r.returnDue, r.actualReturn)) * (+db.settings.lateFeePerDay || 0); }
-function rentalCharges(db, r) { const item = itemById(db, r.itemId) || {}; const fee = r.rentalFee === "" || r.rentalFee == null ? +item.rentalPrice || 0 : +r.rentalFee; return fee + rentalLateFee(db, r) + (+r.damage || 0); }
+function rentalCharges(db, r) { const item = itemById(db, r.itemId) || {}; const fee = r.rentalFee === "" || r.rentalFee == null ? +item.rentalPrice || 0 : +r.rentalFee; return fee + rentalDeposit(db, r) + rentalLateFee(db, r); }
 function rentalDeposit(db, r) { const item = itemById(db, r.itemId) || {}; return r.deposit === "" || r.deposit == null ? +item.deposit || 0 : +r.deposit; }
 const soldQty = (db, id) => db.sales.filter((s) => s.itemId === id).reduce((a, s) => a + (+s.qty || 0), 0);
 const onRent = (db, id) => db.rentals.filter((r) => r.itemId === id && RENT_ACTIVE.includes(rentalStatus(r))).length;
@@ -261,14 +261,14 @@ function SalesView({ db, update, canWrite, initialOpen }) {
     </TableWrap>
     {open && canWrite && (<Modal title={edit ? "Edit sale" : "New sale"} onClose={() => setOpen(false)} wide>
       <CustomerFields db={db} form={form} set={setForm} />
-      <ItemPicker db={db} value={form.itemId} onChange={(v) => setForm({ ...form, itemId: v, discount: v ? (itemById(db, v)?.discount ?? 0) : 0 })} />
+      <ItemPicker db={db} value={form.itemId} onChange={(v) => { const selectedItem = itemById(db, v); setForm({ ...form, itemId: v, unitPrice: selectedItem ? selectedItem.salePrice : "", discount: selectedItem ? (selectedItem.discount ?? 0) : 0 }); }} />
       <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
         <Field label="Date"><TextInput type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></Field>
         <Field label="Quantity"><TextInput type="number" min="1" value={form.qty} onChange={(e) => setForm({ ...form, qty: e.target.value })} /></Field>
-        <Field label="Discount %"><TextInput type="number" min="0" value={form.discount} onChange={(e) => setForm({ ...form, discount: e.target.value })} /></Field>
+        <Field label="Discount %" hint="Auto-set from the selected item."><TextInput type="number" value={form.discount} readOnly disabled tabIndex={-1} style={{ background: C.cream, cursor: "default", opacity: 1 }} /></Field>
       </div>
       <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
-        <Field label="Unit price" hint={item ? `List: ${inr(item.salePrice)}` : ""}><TextInput type="number" value={form.unitPrice} placeholder={item ? String(item.salePrice) : "0"} onChange={(e) => setForm({ ...form, unitPrice: e.target.value })} /></Field>
+        <Field label="Unit price" hint="Auto-set from the selected item."><TextInput type="number" value={unit} readOnly disabled tabIndex={-1} style={{ background: C.cream, cursor: "default", opacity: 1 }} /></Field>
         <Field label="Payment mode"><Select value={form.mode} onChange={(e) => setForm({ ...form, mode: e.target.value })}>{PAY_MODES.map((m) => <option key={m}>{m}</option>)}</Select></Field>
         <Field label="Amount received"><TextInput type="number" value={form.received} onChange={(e) => setForm({ ...form, received: e.target.value })} /></Field>
       </div>
@@ -363,7 +363,7 @@ function InventoryView({ db, update, canWrite }) {
     <SectionHead title="Inventory" readonly={!canWrite} subtitle="Your outfits and items. “Available” drops as things are sold or rented out, and returns when a rental comes back."
       action={canWrite ? <Btn kind="gold" onClick={openNew}><Plus size={16} /> Add item</Btn> : null} />
     <PageStats items={[["Collection", `${db.inventory.length} items`, Package], ["Units available", db.inventory.reduce((n, i) => n + available(db, i), 0), ShoppingBag], ["On rental / reserved", db.rentals.filter(r => !r.actualReturn).length, CalendarClock]]} />
-    <div className="mb-3" style={{ maxWidth: 320 }}><div className="flex items-center gap-2 px-3" style={{ border: `1px solid ${C.line}`, borderRadius: 9, background: C.card }}><Search size={16} color={C.muted} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search items" style={{ border: "none", outline: "none", padding: "8px 0", width: "100%", fontSize: 14 }} /></div></div>
+    <div className="mb-3" style={{ maxWidth: 320 }}><div className="flex items-center gap-2 px-3" style={{ border: `1px solid ${C.line}`, borderRadius: 9, background: C.card }}><Search size={16} color={C.muted} /><input className="record-filter-search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search items" style={{ border: "none", outline: "none", padding: "8px 0", width: "100%", fontSize: 14 }} /></div></div>
     <TableWrap head={head}>
       {rows.map((i) => {
         const av = available(db, i); const lr = liveRental(db, i.id); const itemStatus = av === 0 ? "Unavailable" : i.status; return (<tr key={i.id}>

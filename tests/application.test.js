@@ -156,6 +156,9 @@ test('browser: sales, customer reuse, ledger, rentals, return, persistence, and 
     await expect(page.getByLabel('Customer name')).toHaveValue('Test Customer');
     await page.getByLabel('Item', { exact: true }).fill('WS-001');
     await page.getByRole('option', { name: /WS-001 Test outfit 1/ }).click();
+    await expect(page.getByLabel('Unit price')).toHaveValue('16400');
+    await expect(page.getByLabel('Unit price')).toHaveAttribute('readonly', '');
+    await expect(page.getByLabel('Discount %')).toHaveAttribute('readonly', '');
     await page.getByLabel('Amount received').fill('16400');
     await page.getByRole('button', { name: 'Save sale', exact: true }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -180,6 +183,14 @@ test('browser: sales, customer reuse, ledger, rentals, return, persistence, and 
     await expect(page.locator('tbody tr').filter({ hasText: 'WS-001' })).toContainText('12%');
     await page.getByRole('button', { name: 'Transactions', exact: true }).click();
     await expect(page.getByText('Sale GR-001', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Add expense / entry', exact: true }).click();
+    await page.getByLabel('Amount').fill('100');
+    await page.getByRole('button', { name: 'Save entry', exact: true }).click();
+    await page.getByRole('button', { name: 'Add expense / entry', exact: true }).click();
+    await page.getByLabel('Type').selectOption('Income');
+    await page.getByLabel('Payment mode').selectOption('UPI');
+    await page.getByLabel('Amount').fill('200');
+    await page.getByRole('button', { name: 'Save entry', exact: true }).click();
     const transactionDate = page.getByLabel('Filter by date');
     const saleDate = await page.locator('tbody tr').filter({ hasText: 'Sale GR-001' }).locator('td').first().innerText();
     assert.match(saleDate, /^\d{4}-\d{2}-\d{2}$/);
@@ -193,6 +204,8 @@ test('browser: sales, customer reuse, ledger, rentals, return, persistence, and 
     const dailyDetails = page.locator('.daily-transactions');
     await dashboardDay.fill(saleDate);
     await expect(dailyDetails.getByText('Sale GR-001', { exact: true })).toBeVisible();
+    await expect(dailyDetails.locator('.daily-summary > div').nth(3)).toContainText('In ₹16,400 · Out ₹100');
+    await expect(dailyDetails.locator('.daily-summary > div').nth(4)).toContainText('In ₹200 · Out ₹0');
     await dashboardDay.fill('2000-01-01');
     await expect(dailyDetails.getByText('No transactions on this date', { exact: true })).toBeVisible();
     await dashboardDay.fill(saleDate);
@@ -209,6 +222,9 @@ test('browser: sales, customer reuse, ledger, rentals, return, persistence, and 
     await page.getByLabel('Amount received').fill('3200');
     await page.getByRole('button', { name: 'Save rental', exact: true }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
+    const rentalRow = page.getByRole('row').filter({ hasText: 'WSB-0001' });
+    await expect(rentalRow.locator('td').nth(4)).toHaveText('₹4,700');
+    await expect(rentalRow.locator('td').nth(6)).toHaveText('₹1,500');
     const rentalSearch = page.getByLabel('Search rentals by name or phone');
     await rentalSearch.fill('9000000000');
     await expect(page.getByText('WSB-0001', { exact: true })).toBeVisible();
