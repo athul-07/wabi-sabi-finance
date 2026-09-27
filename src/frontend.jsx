@@ -196,7 +196,7 @@ function RecordFilters({ search, setSearch, searchLabel, status, setStatus, stat
   return (<div className="flex items-center gap-3 mb-3" style={{ flexWrap: "wrap" }}>
     <label className="flex items-center gap-2 px-3" style={{ flex: "1 1 250px", maxWidth: 420, minWidth: 0, border: `1px solid ${C.line}`, borderRadius: 9, background: C.card }}>
       <Search size={16} color={C.muted} />
-      <input aria-label={searchLabel} value={search} onChange={(e) => setSearch(e.target.value)} placeholder={searchLabel} style={{ border: "none", outline: "none", padding: "9px 0", width: "100%", minWidth: 0, fontSize: 14 }} />
+      <input className="record-filter-search" aria-label={searchLabel} value={search} onChange={(e) => setSearch(e.target.value)} placeholder={searchLabel} style={{ border: "none", outline: "none", padding: "9px 0", width: "100%", minWidth: 0, fontSize: 14 }} />
     </label>
     <Select aria-label={statusLabel} value={status} onChange={(e) => setStatus(e.target.value)} style={{ width: "auto", minWidth: 180 }}>
       <option value="">All statuses</option>{statuses.map((value) => <option key={value} value={value}>{value}</option>)}

@@ -112,6 +112,11 @@ a:focus-visible {
   outline-offset: 3px;
 }
 
+.record-filter-search:focus-visible {
+  outline: none !important;
+  outline-offset: 0;
+}
+
 ::selection {
   background: var(--accent-soft);
   color: var(--accent);
@@ -702,6 +707,11 @@ main {
   padding: 22px;
   min-width: 0;
   box-shadow: var(--shadow);
+}
+
+.panel.payment-panel {
+  margin-top: -8px;
+  margin-bottom: 16px;
 }
 
 .panel-heading {
