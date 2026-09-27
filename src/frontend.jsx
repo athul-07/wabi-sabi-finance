@@ -180,13 +180,32 @@ function CustomerFields({ db, form, set }) {
   </div>);
 }
 function ItemPicker({ db, value, onChange, label = "Item" }) {
-  return (<Field label={label}><Select value={value} onChange={(e) => onChange(e.target.value)}>
-    <option value="">Select an item…</option>
-    {db.inventory.map((i) => { const av = available(db, i); return <option key={i.id} value={i.id} disabled={av <= 0 && value !== i.id}>{i.id} · {i.name} {av <= 0 ? "(none available)" : `(${av} available)`}</option>; })}
-  </Select></Field>);
+  const selected = db.inventory.find((i) => i.id === value);
+  const [query, setQuery] = useState(selected ? `${selected.id} · ${selected.name}` : "");
+  const items = db.inventory.filter((i) => available(db, i) > 0 || i.id === value);
+  const choose = (text) => {
+    setQuery(text);
+    const item = items.find((i) => `${i.id} · ${i.name}` === text);
+    onChange(item?.id || "");
+  };
+  return (<Field label={label} hint="Type an item ID or name to search."><TextInput list="inventory-items" value={query} onChange={(e) => choose(e.target.value)} placeholder="Search items" />
+    <datalist id="inventory-items">{items.map((i) => <option key={i.id} value={`${i.id} · ${i.name}`} />)}</datalist>
+  </Field>);
+}
+function RecordFilters({ search, setSearch, searchLabel, status, setStatus, statusLabel, statuses }) {
+  return (<div className="flex items-center gap-3 mb-3" style={{ flexWrap: "wrap" }}>
+    <label className="flex items-center gap-2 px-3" style={{ flex: "1 1 250px", maxWidth: 420, minWidth: 0, border: `1px solid ${C.line}`, borderRadius: 9, background: C.card }}>
+      <Search size={16} color={C.muted} />
+      <input aria-label={searchLabel} value={search} onChange={(e) => setSearch(e.target.value)} placeholder={searchLabel} style={{ border: "none", outline: "none", padding: "9px 0", width: "100%", minWidth: 0, fontSize: 14 }} />
+    </label>
+    <Select aria-label={statusLabel} value={status} onChange={(e) => setStatus(e.target.value)} style={{ width: "auto", minWidth: 180 }}>
+      <option value="">All statuses</option>{statuses.map((value) => <option key={value} value={value}>{value}</option>)}
+    </Select>
+  </div>);
 }
 function SalesView({ db, update, canWrite, initialOpen }) {
   const [open, setOpen] = useState(!!initialOpen); const [edit, setEdit] = useState(null);
+  const [search, setSearch] = useState(""); const [statusFilter, setStatusFilter] = useState("");
   const blank = { id: "", date: today(), phone: "", customer: "", itemId: "", qty: 1, discount: 0, unitPrice: "", mode: "Cash", received: "", notes: "" };
   const [form, setForm] = useState(blank);
   const openNew = () => { setEdit(null); setForm(blank); setOpen(true); };
@@ -203,13 +222,20 @@ function SalesView({ db, update, canWrite, initialOpen }) {
     if (await update(next)) setOpen(false);
   };
   const del = (id) => { const next = structuredClone(db); next.sales = next.sales.filter((x) => x.id !== id); update(next); };
+  const rows = db.sales.filter((s) => {
+    const needle = search.trim().toLowerCase();
+    const phoneNeedle = normalizePhone(needle);
+    const text = `${s.id} ${custName(db, s.phone)} ${s.customer || ""} ${s.phone || ""} ${itemById(db, s.itemId)?.name || ""}`.toLowerCase();
+    return (!needle || text.includes(needle) || (phoneNeedle && normalizePhone(s.phone).includes(phoneNeedle))) && (!statusFilter || saleStatus(s) === statusFilter);
+  });
   const head = ["Sale", "Date", "Customer", "Item", "Qty", "Total", "Received", "Balance", "Status"]; if (canWrite) head.push("");
   return (<div>
     <SectionHead title="Sales" readonly={!canWrite} subtitle="One row per item sold. Enter a phone — a saved customer fills in, a new one is saved automatically. The amount received posts to the ledger on its own."
       action={canWrite ? <Btn kind="gold" onClick={openNew}><Plus size={16} /> New sale</Btn> : null} />
     <PageStats items={[["Total sales", db.sales.length, ShoppingBag], ["Payments received", inr(db.sales.reduce((n, s) => n + Number(s.received || 0), 0)), Wallet], ["Outstanding balance", inr(db.sales.reduce((n, s) => n + saleBalance(s), 0)), CircleDollarSign]]} />
-    <TableWrap head={head} empty={db.sales.length === 0} emptyText="No sales yet.">
-      {db.sales.map((s) => (<tr key={s.id}>
+    <RecordFilters search={search} setSearch={setSearch} searchLabel="Search sales by name or phone" status={statusFilter} setStatus={setStatusFilter} statusLabel="Filter sales by status" statuses={["Paid", "Partly Paid", "Unpaid"]} />
+    <TableWrap head={head} empty={rows.length === 0} emptyText={db.sales.length ? "No sales match these filters." : "No sales yet."}>
+      {rows.map((s) => (<tr key={s.id}>
         <Td>{s.id}</Td><Td>{s.date}</Td><Td>{custName(db, s.phone) || s.customer || <span style={{ color: C.muted }}>—</span>}</Td>
         <Td>{itemById(db, s.itemId)?.name || s.itemId}</Td><Td>{s.qty}</Td><Td>{inr(saleTotal(s))}</Td><Td>{inr(s.received)}</Td><Td>{inr(saleBalance(s))}</Td>
         <Td><Pill tone={statusTone(saleStatus(s))}>{saleStatus(s)}</Pill></Td>
@@ -218,7 +244,7 @@ function SalesView({ db, update, canWrite, initialOpen }) {
     </TableWrap>
     {open && canWrite && (<Modal title={edit ? "Edit sale" : "New sale"} onClose={() => setOpen(false)} wide>
       <CustomerFields db={db} form={form} set={setForm} />
-      <ItemPicker db={db} value={form.itemId} onChange={(v) => setForm({ ...form, itemId: v })} />
+      <ItemPicker db={db} value={form.itemId} onChange={(v) => setForm({ ...form, itemId: v, discount: v ? (itemById(db, v)?.discount ?? 0) : 0 })} />
       <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
         <Field label="Date"><TextInput type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></Field>
         <Field label="Quantity"><TextInput type="number" min="1" value={form.qty} onChange={(e) => setForm({ ...form, qty: e.target.value })} /></Field>
@@ -239,6 +265,7 @@ function SalesView({ db, update, canWrite, initialOpen }) {
 }
 function RentalsView({ db, update, canWrite, initialOpen }) {
   const [open, setOpen] = useState(!!initialOpen); const [edit, setEdit] = useState(null);
+  const [search, setSearch] = useState(""); const [statusFilter, setStatusFilter] = useState("");
   const blank = { id: "", bookingDate: today(), phone: "", customer: "", itemId: "", eventDate: "", pickup: "", returnDue: "", actualReturn: "", rentalFee: "", deposit: "", damage: 0, mode: "Cash", received: "", depositRefunded: 0, notes: "" };
   const [form, setForm] = useState(blank);
   const openNew = () => { setEdit(null); setForm(blank); setOpen(true); };
@@ -256,13 +283,20 @@ function RentalsView({ db, update, canWrite, initialOpen }) {
   };
   const del = (id) => { const next = structuredClone(db); next.rentals = next.rentals.filter((x) => x.id !== id); update(next); };
   const markReturned = (r) => { const next = structuredClone(db); next.rentals[next.rentals.findIndex((x) => x.id === r.id)] = { ...r, actualReturn: today() }; update(next); };
+  const rows = db.rentals.filter((r) => {
+    const needle = search.trim().toLowerCase();
+    const phoneNeedle = normalizePhone(needle);
+    const text = `${r.id} ${custName(db, r.phone)} ${r.customer || ""} ${r.phone || ""} ${itemById(db, r.itemId)?.name || ""}`.toLowerCase();
+    return (!needle || text.includes(needle) || (phoneNeedle && normalizePhone(r.phone).includes(phoneNeedle))) && (!statusFilter || rentalStatus(r) === statusFilter);
+  });
   const head = ["Booking", "Customer", "Item", "Return due", "Charges", "Received", "Balance", "Status", "Deposit held"]; if (canWrite) head.push("");
   return (<div>
     <SectionHead title="Rentals" readonly={!canWrite} subtitle="One row per booking. Late fee, status and deposit are worked out for you. The rent received posts to the ledger automatically."
       action={canWrite ? <Btn kind="gold" onClick={openNew}><Plus size={16} /> New rental</Btn> : null} />
     <PageStats items={[["Active rentals", db.rentals.filter(r => !r.actualReturn).length, CalendarClock], ["Overdue returns", db.rentals.filter(r => rentalStatus(r) === 'Overdue').length, Package], ["Rental payments", inr(db.rentals.reduce((n, r) => n + Number(r.received || 0), 0)), Wallet]]} />
-    <TableWrap head={head} empty={db.rentals.length === 0} emptyText="No rentals yet.">
-      {db.rentals.map((r) => {
+    <RecordFilters search={search} setSearch={setSearch} searchLabel="Search rentals by name or phone" status={statusFilter} setStatus={setStatusFilter} statusLabel="Filter rentals by status" statuses={["Out", "Returned", "Booked", "Overdue"]} />
+    <TableWrap head={head} empty={rows.length === 0} emptyText={db.rentals.length ? "No rentals match these filters." : "No rentals yet."}>
+      {rows.map((r) => {
         const st = rentalStatus(r); const held = Math.max(0, rentalDeposit(db, r) - (+r.damage || 0) - (+r.depositRefunded || 0)); return (<tr key={r.id}>
           <Td>{r.id}</Td><Td>{custName(db, r.phone) || r.customer || <span style={{ color: C.muted }}>—</span>}</Td><Td>{itemById(db, r.itemId)?.name || r.itemId}</Td>
           <Td>{r.returnDue || "—"}</Td><Td>{inr(rentalCharges(db, r))}</Td><Td>{inr(r.received)}</Td><Td>{inr(Math.max(0, rentalCharges(db, r) - (+r.received || 0)))}</Td>
@@ -274,7 +308,7 @@ function RentalsView({ db, update, canWrite, initialOpen }) {
     </TableWrap>
     {open && canWrite && (<Modal title={edit ? "Edit rental" : "New rental"} onClose={() => setOpen(false)} wide>
       <CustomerFields db={db} form={form} set={setForm} />
-      <ItemPicker db={db} value={form.itemId} onChange={(v) => setForm({ ...form, itemId: v })} />
+      <ItemPicker db={db} value={form.itemId} onChange={(v) => { const selectedItem = itemById(db, v); setForm({ ...form, itemId: v, rentalFee: selectedItem ? selectedItem.rentalPrice : "", deposit: selectedItem ? selectedItem.deposit : "" }); }} />
       <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr 1fr 1fr" }}>
         <Field label="Event date"><TextInput type="date" value={form.eventDate} onChange={(e) => setForm({ ...form, eventDate: e.target.value })} /></Field>
         <Field label="Pickup"><TextInput type="date" value={form.pickup} onChange={(e) => setForm({ ...form, pickup: e.target.value })} /></Field>
@@ -282,8 +316,8 @@ function RentalsView({ db, update, canWrite, initialOpen }) {
         <Field label="Actual return" hint="Fill on return"><TextInput type="date" value={form.actualReturn} onChange={(e) => setForm({ ...form, actualReturn: e.target.value })} /></Field>
       </div>
       <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
-        <Field label="Rental fee" hint={item ? `List: ${inr(item.rentalPrice)}` : ""}><TextInput type="number" value={form.rentalFee} placeholder={item ? String(item.rentalPrice) : "0"} onChange={(e) => setForm({ ...form, rentalFee: e.target.value })} /></Field>
-        <Field label="Security deposit" hint={item ? `List: ${inr(item.deposit)}` : ""}><TextInput type="number" value={form.deposit} placeholder={item ? String(item.deposit) : "0"} onChange={(e) => setForm({ ...form, deposit: e.target.value })} /></Field>
+        <Field label="Rental fee" hint="Set from the selected item; cannot be edited."><TextInput type="number" value={preview.rentalFee} readOnly style={{ background: C.cream }} /></Field>
+        <Field label="Security deposit" hint="Set from the selected item; cannot be edited."><TextInput type="number" value={preview.deposit} readOnly style={{ background: C.cream }} /></Field>
         <Field label="Damage charge"><TextInput type="number" value={form.damage} onChange={(e) => setForm({ ...form, damage: e.target.value })} /></Field>
       </div>
       <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
@@ -300,14 +334,14 @@ function RentalsView({ db, update, canWrite, initialOpen }) {
 }
 function InventoryView({ db, update, canWrite }) {
   const [open, setOpen] = useState(false); const [edit, setEdit] = useState(null); const [q, setQ] = useState("");
-  const blank = { id: "", name: "", category: "Party wear", purchaseCost: 0, salePrice: 0, rentalPrice: 0, deposit: 1500, cleaning: 450, repair: 1000, status: "Available", stockQty: 1, purchaseDate: "" };
+  const blank = { id: "", name: "", category: "Party wear", purchaseCost: 0, salePrice: 0, discount: 0, rentalPrice: 0, deposit: 1500, cleaning: 450, repair: 1000, status: "Available", stockQty: 1, purchaseDate: "" };
   const [form, setForm] = useState(blank);
   const openNew = () => { setEdit(null); setForm({ ...blank, id: nextId(db.inventory, "WS-", 3) }); setOpen(true); };
   const openEdit = (i) => { setEdit(i.id); setForm({ ...blank, ...i }); setOpen(true); };
   const save = async () => { if (!form.name) return; const next = structuredClone(db); if (edit) next.inventory[next.inventory.findIndex((x) => x.id === edit)] = form; else next.inventory.push(form); if (await update(next)) setOpen(false); };
   const del = (id) => { const next = structuredClone(db); next.inventory = next.inventory.filter((x) => x.id !== id); update(next); };
   const rows = db.inventory.filter((i) => (i.name + i.id + i.category).toLowerCase().includes(q.toLowerCase()));
-  const head = ["ID", "Item", "Category", "Sale price", "Rental", "Deposit", "Stock", "Available", "Rental status", "Item status"]; if (canWrite) head.push("");
+  const head = ["ID", "Item", "Category", "Sale price", "Discount", "Rental", "Deposit", "Stock", "Available", "Rental status", "Item status"]; if (canWrite) head.push("");
   return (<div>
     <SectionHead title="Inventory" readonly={!canWrite} subtitle="Your outfits and items. “Available” drops as things are sold or rented out, and returns when a rental comes back."
       action={canWrite ? <Btn kind="gold" onClick={openNew}><Plus size={16} /> Add item</Btn> : null} />
@@ -315,10 +349,10 @@ function InventoryView({ db, update, canWrite }) {
     <div className="mb-3" style={{ maxWidth: 320 }}><div className="flex items-center gap-2 px-3" style={{ border: `1px solid ${C.line}`, borderRadius: 9, background: C.card }}><Search size={16} color={C.muted} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search items" style={{ border: "none", outline: "none", padding: "8px 0", width: "100%", fontSize: 14 }} /></div></div>
     <TableWrap head={head}>
       {rows.map((i) => {
-        const av = available(db, i); const lr = liveRental(db, i.id); return (<tr key={i.id}>
-          <Td>{i.id}</Td><Td>{i.name}</Td><Td>{i.category}</Td><Td>{inr(i.salePrice)}</Td><Td>{inr(i.rentalPrice)}</Td><Td>{inr(i.deposit)}</Td>
+        const av = available(db, i); const lr = liveRental(db, i.id); const itemStatus = av === 0 ? "Unavailable" : i.status; return (<tr key={i.id}>
+          <Td>{i.id}</Td><Td>{i.name}</Td><Td>{i.category}</Td><Td>{inr(i.salePrice)}</Td><Td>{Number(i.discount || 0)}%</Td><Td>{inr(i.rentalPrice)}</Td><Td>{inr(i.deposit)}</Td>
           <Td>{i.stockQty}</Td><Td><b style={{ color: av === 0 ? C.red : C.green }}>{av}</b></Td>
-          <Td><Pill tone={lr.tone}>{lr.label}</Pill></Td><Td><Pill tone={i.status === "Available" ? "green" : "grey"}>{i.status}</Pill></Td>
+          <Td><Pill tone={lr.tone}>{lr.label}</Pill></Td><Td><Pill tone={itemStatus === "Available" ? "green" : itemStatus === "Unavailable" ? "red" : "grey"}>{itemStatus}</Pill></Td>
           {canWrite && <Td><div className="flex gap-2"><button aria-label="Edit record" onClick={() => openEdit(i)} style={{ color: C.maroon }}><Pencil size={16} /></button><button aria-label="Delete record" onClick={() => del(i.id)} style={{ color: C.red }}><Trash2 size={16} /></button></div></Td>}
         </tr>);
       })}
@@ -332,6 +366,7 @@ function InventoryView({ db, update, canWrite }) {
       <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
         <Field label="Purchase cost"><TextInput type="number" value={form.purchaseCost} onChange={(e) => setForm({ ...form, purchaseCost: e.target.value })} /></Field>
         <Field label="Sale price"><TextInput type="number" value={form.salePrice} onChange={(e) => setForm({ ...form, salePrice: e.target.value })} /></Field>
+        <Field label="Discount %"><TextInput type="number" min="0" max="100" value={form.discount} onChange={(e) => setForm({ ...form, discount: e.target.value })} /></Field>
         <Field label="Rental price"><TextInput type="number" value={form.rentalPrice} onChange={(e) => setForm({ ...form, rentalPrice: e.target.value })} /></Field>
       </div>
       <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr 1fr 1fr" }}>
@@ -387,12 +422,13 @@ function TransactionsView({ db, update, canWrite }) {
   const del = (id) => { const next = structuredClone(db); next.transactions = next.transactions.filter((x) => x.id !== id); update(next); };
   const allRows = allTx(db).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
   const rows = allRows.filter((t) => !dateFilter || String(t.date || "").slice(0, 10) === dateFilter);
+  const summaryRows = dateFilter ? rows : allRows;
   const cats = form.type === "Income" ? INCOME_CATS : EXPENSE_CATS;
   const head = ["Date", "Type", "Category", "Description", "Party", "Mode", "Amount", "Source"]; if (canWrite) head.push("");
   return (<div>
     <SectionHead title="Transactions" readonly={!canWrite} subtitle="Your money diary. Sale and rental receipts appear here on their own (marked Auto). Add expenses and refunds yourself."
       action={canWrite ? <Btn kind="gold" onClick={() => { setForm(blank); setOpen(true); }}><Plus size={16} /> Add expense / entry</Btn> : null} />
-    <PageStats items={[["All-time income", inr(allRows.filter(t => t.type === 'Income').reduce((n, t) => n + Number(t.amount || 0), 0)), ArrowDownLeft], ["All-time expenses", inr(allRows.filter(t => t.type === 'Expense').reduce((n, t) => n + Number(t.amount || 0), 0)), ArrowUpRight], ["Ledger entries", allRows.length, ReceiptText]]} />
+    <PageStats items={[[dateFilter ? "Income on date" : "All-time income", inr(summaryRows.filter(t => t.type === 'Income').reduce((n, t) => n + Number(t.amount || 0), 0)), ArrowDownLeft], [dateFilter ? "Expenses on date" : "All-time expenses", inr(summaryRows.filter(t => t.type === 'Expense').reduce((n, t) => n + Number(t.amount || 0), 0)), ArrowUpRight], [dateFilter ? "Entries on date" : "Ledger entries", summaryRows.length, ReceiptText]]} />
     <div className="flex items-end gap-2" style={{ flexWrap: "wrap", marginBottom: 14 }}>
       <Field label="Filter by date"><TextInput type="date" value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} style={{ maxWidth: 220 }} /></Field>
       {dateFilter && <Btn kind="ghost" small onClick={() => setDateFilter("")}><X size={15} /> All dates</Btn>}

@@ -16,7 +16,8 @@ module.exports = function validate(data) {
   for (const item of data.inventory) {
     nonnegative(item.stockQty, 'Stock quantity');
     if (!Number.isInteger(Number(item.stockQty))) throw new Error('Stock quantity must be a whole number.');
-    for (const key of ['purchaseCost', 'salePrice', 'rentalPrice', 'deposit', 'cleaning', 'repair']) nonnegative(item[key] ?? 0, key);
+    for (const key of ['purchaseCost', 'salePrice', 'discount', 'rentalPrice', 'deposit', 'cleaning', 'repair']) nonnegative(item[key] ?? 0, key);
+    if (Number(item.discount || 0) > 100) throw new Error('Inventory discount cannot exceed 100%.');
     stock.set(item.id, Number(item.stockQty));
   }
   for (const sale of data.sales) {

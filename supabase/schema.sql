@@ -38,6 +38,7 @@ create table if not exists public.wabi_inventory (
   status text not null default 'Available',
   stock_qty integer not null default 1,
   sale_price numeric not null default 0,
+  discount numeric not null default 0,
   rental_price numeric not null default 0,
   purchase_cost numeric not null default 0,
   deposit numeric not null default 0,
@@ -59,6 +60,7 @@ create table if not exists public.wabi_customers (
   is_active boolean not null default true
 );
 alter table public.wabi_inventory add column if not exists position integer not null default 0;
+alter table public.wabi_inventory add column if not exists discount numeric not null default 0;
 alter table public.wabi_customers add column if not exists position integer not null default 0;
 create table if not exists public.wabi_sales (
   id text primary key,
@@ -138,11 +140,12 @@ begin
       on conflict (singleton) do nothing;
 
       insert into public.wabi_inventory
-        (id, position, name, category, status, stock_qty, sale_price, rental_price,
+        (id, position, name, category, status, stock_qty, sale_price, discount, rental_price,
           purchase_cost, deposit, cleaning, repair, purchase_date, item, is_active)
       select item->>'id', ordinality::integer - 1, coalesce(item->>'name', ''), item->>'category',
         coalesce(item->>'status', 'Available'), coalesce(nullif(item->>'stockQty', '')::integer, 1),
-        coalesce(nullif(item->>'salePrice', '')::numeric, 0), coalesce(nullif(item->>'rentalPrice', '')::numeric, 0),
+        coalesce(nullif(item->>'salePrice', '')::numeric, 0), coalesce(nullif(item->>'discount', '')::numeric, 0),
+        coalesce(nullif(item->>'rentalPrice', '')::numeric, 0),
         coalesce(nullif(item->>'purchaseCost', '')::numeric, 0), coalesce(nullif(item->>'deposit', '')::numeric, 0),
         coalesce(nullif(item->>'cleaning', '')::numeric, 0), coalesce(nullif(item->>'repair', '')::numeric, 0),
         coalesce(item->>'purchaseDate', ''), item, true
@@ -150,7 +153,7 @@ begin
       where nullif(item->>'id', '') is not null
       on conflict (id) do update set position = excluded.position, name = excluded.name,
         category = excluded.category, status = excluded.status, stock_qty = excluded.stock_qty,
-        sale_price = excluded.sale_price, rental_price = excluded.rental_price,
+        sale_price = excluded.sale_price, discount = excluded.discount, rental_price = excluded.rental_price,
         purchase_cost = excluded.purchase_cost, deposit = excluded.deposit, cleaning = excluded.cleaning,
         repair = excluded.repair, purchase_date = excluded.purchase_date, item = excluded.item, is_active = true;
 
@@ -293,17 +296,19 @@ begin
 
   update public.wabi_inventory set is_active = false where is_active;
   insert into public.wabi_inventory
-    (id, position, name, category, status, stock_qty, sale_price, rental_price, purchase_cost,
+    (id, position, name, category, status, stock_qty, sale_price, discount, rental_price, purchase_cost,
       deposit, cleaning, repair, purchase_date, item, is_active)
   select item->>'id', ordinality::integer - 1, coalesce(item->>'name', ''), item->>'category', coalesce(item->>'status', 'Available'),
       coalesce(nullif(item->>'stockQty', '')::integer, 1), coalesce(nullif(item->>'salePrice', '')::numeric, 0),
-      coalesce(nullif(item->>'rentalPrice', '')::numeric, 0), coalesce(nullif(item->>'purchaseCost', '')::numeric, 0),
+      coalesce(nullif(item->>'discount', '')::numeric, 0), coalesce(nullif(item->>'rentalPrice', '')::numeric, 0),
+      coalesce(nullif(item->>'purchaseCost', '')::numeric, 0),
       coalesce(nullif(item->>'deposit', '')::numeric, 0), coalesce(nullif(item->>'cleaning', '')::numeric, 0),
       coalesce(nullif(item->>'repair', '')::numeric, 0), coalesce(item->>'purchaseDate', ''), item, true
     from jsonb_array_elements(coalesce(shop_record #> '{data,inventory}', '[]'::jsonb)) with ordinality as rows(item, ordinality)
     where nullif(item->>'id', '') is not null
   on conflict (id) do update set name = excluded.name, category = excluded.category,
       position = excluded.position, status = excluded.status, stock_qty = excluded.stock_qty, sale_price = excluded.sale_price,
+      discount = excluded.discount,
       rental_price = excluded.rental_price, purchase_cost = excluded.purchase_cost, deposit = excluded.deposit,
       cleaning = excluded.cleaning, repair = excluded.repair, purchase_date = excluded.purchase_date,
       item = excluded.item, is_active = true;

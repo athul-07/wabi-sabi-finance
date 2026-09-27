@@ -25,6 +25,7 @@ test('Postgres schema creates trusted profiles atomically, protects data and che
     assert.equal((await db.query('select hash from wabi_legacy_users where username = $1', ['legacy-owner'])).rows[0].hash, 'retained-hash');
     assert.equal((await db.query('select to_regclass($1) as table_name', ['public.wabi_kv'])).rows[0].table_name, null);
     assert.equal((await db.query('select count(*)::int as n from wabi_inventory where is_active')).rows[0].n, shopData.inventory.length);
+    assert.equal(Number((await db.query('select discount from wabi_inventory where id = $1', [shopData.inventory[0].id])).rows[0].discount), 0);
     assert.equal((await db.query('select count(*)::int as n from wabi_customers where is_active')).rows[0].n, shopData.customers.length);
     assert.equal((await db.query('select count(*)::int as n from wabi_sales where is_active')).rows[0].n, shopData.sales.length);
     assert.equal((await db.query('select count(*)::int as n from wabi_rentals where is_active')).rows[0].n, shopData.rentals.length);
@@ -36,9 +37,10 @@ test('Postgres schema creates trusted profiles atomically, protects data and che
     assert.equal(backfilled.data.sales[0].id, 'SALE-TEST');
     assert.equal(backfilled.data.rentals[0].id, 'RENT-TEST');
     assert.equal(backfilled.data.transactions[0].id, 'TX-TEST');
-    const saved = { data: { ...shopData, inventory: [{ ...shopData.inventory[0], salePrice: 9999 }], customers: [] }, version: 2, updatedAt: '2026-09-26T10:00:00.000Z', updatedBy: 'owner' };
+    const saved = { data: { ...shopData, inventory: [{ ...shopData.inventory[0], salePrice: 9999, discount: 12 }], customers: [] }, version: 2, updatedAt: '2026-09-26T10:00:00.000Z', updatedBy: 'owner' };
     assert.equal((await db.query('select wabi_save_shop($1::jsonb, $2::integer) as saved', [saved, 1])).rows[0].saved, true);
     assert.equal(Number((await db.query('select sale_price from wabi_inventory where id = $1', [seed.inventory[0].id])).rows[0].sale_price), 9999);
+    assert.equal(Number((await db.query('select discount from wabi_inventory where id = $1', [seed.inventory[0].id])).rows[0].discount), 12);
     assert.equal((await db.query('select count(*)::int as n from wabi_inventory where is_active')).rows[0].n, 1);
     assert.equal((await db.query('select count(*)::int as n from wabi_customers where is_active')).rows[0].n, 0);
     assert.equal((await db.query('select wabi_save_shop($1::jsonb, $2::integer) as saved', [saved, 1])).rows[0].saved, false);

@@ -223,6 +223,26 @@ a:focus-visible {
 .sidebar nav {
   flex: 1;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--chrome-muted) var(--chrome);
+}
+
+.sidebar nav::-webkit-scrollbar {
+  width: 8px;
+}
+
+.sidebar nav::-webkit-scrollbar-track {
+  background: var(--chrome);
+}
+
+.sidebar nav::-webkit-scrollbar-thumb {
+  background: var(--chrome-muted);
+  border: 2px solid var(--chrome);
+  border-radius: 8px;
+}
+
+.sidebar nav::-webkit-scrollbar-button {
+  display: none;
 }
 
 .nav-label {
@@ -603,7 +623,7 @@ main {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 17px;
-  margin-bottom: 23px;
+  margin-bottom: 14px;
 }
 
 .metric-card {
@@ -925,6 +945,44 @@ main {
   font-weight: 500;
 }
 
+.daily-transactions {
+  margin-bottom: 22px;
+}
+
+.daily-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  padding: 12px 0 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.daily-summary>div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.daily-summary span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.daily-summary strong {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+@media (max-width: 767px) {
+  .daily-summary {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}
+
 .rental-notice {
   display: flex;
   align-items: center;
@@ -1020,6 +1078,19 @@ main {
   color: var(--muted);
 }
 
+.payment-grid .payment-method-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.payment-method-label svg {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
 .payment-grid strong {
   display: block;
   font-size: 19px;
@@ -1051,7 +1122,7 @@ main {
 
 .page-stats {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
   gap: 16px;
   margin-bottom: 25px;
 }
@@ -1102,7 +1173,7 @@ main {
   }
 }
 
-@media (max-width: 380px) {
+@media (max-width: 480px) {
   .page-stats {
     grid-template-columns: 1fr;
   }
@@ -1511,6 +1582,10 @@ main {
   .payment-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     row-gap: 20px;
+  }
+
+  .payment-grid>div:nth-child(3n) {
+    border: none;
   }
 
   .stock-strip>div {
