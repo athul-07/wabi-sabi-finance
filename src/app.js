@@ -125,6 +125,17 @@ function createApp({ db, authClient }) {
     res.json(visibleRecord(rec, req.user));
   }));
 
+  app.get('/api/export', auth, requireAdmin, asyncRoute(async (req, res) => {
+    const rec = await db.getShop();
+    if (!rec) throw fail('Shop data is not initialized. Run the database schema.', 503);
+    const users = await db.listUsers();
+    const buffer = await require('./export-workbook').exportWorkbook(rec, users);
+    const date = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="wabi-sabi-backup-${date}.xlsx"`);
+    res.send(Buffer.from(buffer));
+  }));
+
   // Writes are filtered by the signed-in user's live permissions, so a page they
   // can't write to is never changed even if the request contains it.
   app.put("/api/data", auth, asyncRoute(async (req, res) => {
@@ -177,6 +188,17 @@ function createApp({ db, authClient }) {
     const record = await db.getShop();
     if (!record) return res.status(503).json({ ok: false, engine: db.engine, error: 'Shop data is missing in Supabase.' });
     res.json({ ok: true, engine: db.engine });
+  }));
+
+  // Vercel calls this once a day. Require its private bearer token before any
+  // database access; an ordinary page visit must not stand in for the cron job.
+  app.get('/api/cron/keepalive', asyncRoute(async (req, res) => {
+    const secret = process.env.CRON_SECRET;
+    if (!secret || req.get('authorization') !== `Bearer ${secret}`) return res.status(401).json({ error: 'Unauthorized.' });
+    const shop = await db.getShop();
+    if (!shop) return res.status(503).json({ ok: false, error: 'Shop data is missing in Supabase.' });
+    await db.listUsers();
+    res.json({ ok: true });
   }));
 
   app.use((error, req, res, next) => {

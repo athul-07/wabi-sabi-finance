@@ -50,6 +50,41 @@ function AppearanceSettings() {
   return <section className="panel appearance-panel"><div className="panel-heading"><div><h3>Appearance</h3><p>Make this workspace feel like yours. Saved to your account.</p></div></div><div className="appearance-options">{['light', 'dark'].map(mode => <button key={mode} className={`appearance-option ${theme === mode ? 'selected' : ''}`} aria-pressed={theme === mode} onClick={() => setTheme(mode)}><span className={`theme-preview preview-${mode}`}><i /><span><b /><b /><b /></span></span><span>{mode === 'light' ? <Sun size={15} /> : <Moon size={15} />}{mode === 'light' ? 'Light mode' : 'Dark mode'}{theme === mode && <Check size={15} />}</span></button>)}</div></section>;
 }
 
+/* ---------------- toasts ---------------- */
+const toast = (msg, type = "success", persistent = false) => {
+  const id = Date.now() + Math.random();
+  window.dispatchEvent(new CustomEvent("toast", { detail: { id, msg, type, persistent } }));
+  return id;
+};
+const dismissToast = id => window.dispatchEvent(new CustomEvent("toast-dismiss", { detail: id }));
+function ToastContainer() {
+  const [toasts, setToasts] = useState([]);
+  useEffect(() => {
+    const timers = new Map();
+    const handle = (e) => {
+      const { id, persistent } = e.detail;
+      setToasts(prev => [...prev, e.detail]);
+      if (!persistent) timers.set(id, setTimeout(() => {
+        setToasts(prev => prev.filter(t => t.id !== id));
+        timers.delete(id);
+      }, 3000));
+    };
+    const dismiss = (e) => {
+      clearTimeout(timers.get(e.detail));
+      timers.delete(e.detail);
+      setToasts(prev => prev.filter(t => t.id !== e.detail));
+    };
+    window.addEventListener("toast", handle);
+    window.addEventListener("toast-dismiss", dismiss);
+    return () => {
+      window.removeEventListener("toast", handle);
+      window.removeEventListener("toast-dismiss", dismiss);
+      timers.forEach(clearTimeout);
+    };
+  }, []);
+  return <div className="toast-container" role="status" aria-live="polite">{toasts.map(t => <div key={t.id} className={`toast toast-${t.type}`}>{t.type === 'loading' ? <Cloud size={16} /> : t.type === 'error' ? <Trash2 size={16} /> : <Check size={16} />} <span>{t.msg}</span></div>)}</div>;
+}
+
 const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 const monthOf = (d) => (d || "").slice(0, 7);
 const inr = (n) => (n < 0 ? "-" : "") + "₹" + Math.abs(Math.round(+n || 0)).toLocaleString("en-IN");
@@ -236,9 +271,9 @@ function SalesView({ db, update, canWrite, initialOpen }) {
     if (edit) next.sales[next.sales.findIndex((x) => x.id === edit)] = row;
     else { row.id = nextId(next.sales, "GR-", 3); next.sales.push(row); }
     if (form.phone && !custByPhone(next, form.phone)) next.customers.push({ id: nextId(next.customers, "CUST-", 3), phone: form.phone.trim(), name: form.customer || "", email: "", address: "", notes: "Added from a sale" });
-    if (await update(next)) setOpen(false);
+    if (await update(next)) { setOpen(false); toast(edit ? "Sale updated" : "Sale saved"); }
   };
-  const del = (id) => { const next = structuredClone(db); next.sales = next.sales.filter((x) => x.id !== id); update(next); };
+  const del = async (id) => { const next = structuredClone(db); next.sales = next.sales.filter((x) => x.id !== id); if (await update(next)) toast("Sale deleted", "error"); };
   const rows = db.sales.filter((s) => {
     const needle = search.trim().toLowerCase();
     const phoneNeedle = normalizePhone(needle);
@@ -296,10 +331,10 @@ function RentalsView({ db, update, canWrite, initialOpen }) {
     if (edit) next.rentals[next.rentals.findIndex((x) => x.id === edit)] = row;
     else { row.id = nextId(next.rentals, "WSB-", 4); next.rentals.push(row); }
     if (form.phone && !custByPhone(next, form.phone)) next.customers.push({ id: nextId(next.customers, "CUST-", 3), phone: form.phone.trim(), name: form.customer || "", email: "", address: "", notes: "Added from a rental" });
-    if (await update(next)) setOpen(false);
+    if (await update(next)) { setOpen(false); toast(edit ? "Rental updated" : "Rental saved"); }
   };
-  const del = (id) => { const next = structuredClone(db); next.rentals = next.rentals.filter((x) => x.id !== id); update(next); };
-  const markReturned = (r) => { const next = structuredClone(db); next.rentals[next.rentals.findIndex((x) => x.id === r.id)] = { ...r, actualReturn: today() }; update(next); };
+  const del = async (id) => { const next = structuredClone(db); next.rentals = next.rentals.filter((x) => x.id !== id); if (await update(next)) toast("Rental deleted", "error"); };
+  const markReturned = async (r) => { const next = structuredClone(db); next.rentals[next.rentals.findIndex((x) => x.id === r.id)] = { ...r, actualReturn: today() }; if (await update(next)) toast("Marked as returned", "info"); };
   const rows = db.rentals.filter((r) => {
     const needle = search.trim().toLowerCase();
     const phoneNeedle = normalizePhone(needle);
@@ -355,8 +390,8 @@ function InventoryView({ db, update, canWrite }) {
   const [form, setForm] = useState(blank);
   const openNew = () => { setEdit(null); setForm({ ...blank, id: nextId(db.inventory, "WS-", 3) }); setOpen(true); };
   const openEdit = (i) => { setEdit(i.id); setForm({ ...blank, ...i }); setOpen(true); };
-  const save = async () => { if (!form.name) return; const next = structuredClone(db); if (edit) next.inventory[next.inventory.findIndex((x) => x.id === edit)] = form; else next.inventory.push(form); if (await update(next)) setOpen(false); };
-  const del = (id) => { const next = structuredClone(db); next.inventory = next.inventory.filter((x) => x.id !== id); update(next); };
+  const save = async () => { if (!form.name) return; const next = structuredClone(db); if (edit) next.inventory[next.inventory.findIndex((x) => x.id === edit)] = form; else next.inventory.push(form); if (await update(next)) { setOpen(false); toast(edit ? "Item updated" : "Item added"); } };
+  const del = async (id) => { const next = structuredClone(db); next.inventory = next.inventory.filter((x) => x.id !== id); if (await update(next)) toast("Item deleted", "error"); };
   const rows = db.inventory.filter((i) => (i.name + i.id + i.category).toLowerCase().includes(q.toLowerCase()));
   const head = ["ID", "Item", "Category", "Sale price", "Discount", "Rental", "Deposit", "Stock", "Available", "Rental status", "Item status"]; if (canWrite) head.push("");
   return (<div>
@@ -405,8 +440,8 @@ function CustomersView({ db, update, canWrite }) {
   const blank = { id: "", phone: "", name: "", email: "", address: "", notes: "" }; const [form, setForm] = useState(blank);
   const openNew = () => { setEdit(null); setForm(blank); setOpen(true); };
   const openEdit = (c) => { setEdit(c.id); setForm({ ...c }); setOpen(true); };
-  const save = async () => { if (!form.phone && !form.name) return; const next = structuredClone(db); if (edit) next.customers[next.customers.findIndex((x) => x.id === edit)] = form; else next.customers.push({ ...form, id: nextId(next.customers, "CUST-", 3) }); if (await update(next)) setOpen(false); };
-  const del = (id) => { const next = structuredClone(db); next.customers = next.customers.filter((x) => x.id !== id); update(next); };
+  const save = async () => { if (!form.phone && !form.name) return; const next = structuredClone(db); if (edit) next.customers[next.customers.findIndex((x) => x.id === edit)] = form; else next.customers.push({ ...form, id: nextId(next.customers, "CUST-", 3) }); if (await update(next)) { setOpen(false); toast(edit ? "Customer updated" : "Customer saved"); } };
+  const del = async (id) => { const next = structuredClone(db); next.customers = next.customers.filter((x) => x.id !== id); if (await update(next)) toast("Customer deleted", "error"); };
   const head = ["ID", "Name", "Phone", "Email", "Orders", "Billed", "Outstanding"]; if (canWrite) head.push("");
   return (<div>
     <SectionHead title="Customers" readonly={!canWrite} subtitle="Everyone you've served. New customers are added here the moment you enter them on a sale or rental."
@@ -435,8 +470,8 @@ function TransactionsView({ db, update, canWrite }) {
   const [dateFilter, setDateFilter] = useState("");
   const blank = { id: "", date: today(), type: "Expense", category: "Rent", desc: "", party: "", mode: "Cash", account: "", amount: "", notes: "" };
   const [form, setForm] = useState(blank);
-  const save = async () => { if (!form.amount) return; const next = structuredClone(db); next.transactions.push({ ...form, id: nextId(next.transactions, "TX-", 1) }); if (await update(next)) { setOpen(false); setForm(blank); } };
-  const del = (id) => { const next = structuredClone(db); next.transactions = next.transactions.filter((x) => x.id !== id); update(next); };
+  const save = async () => { if (!form.amount) return; const next = structuredClone(db); next.transactions.push({ ...form, id: nextId(next.transactions, "TX-", 1) }); if (await update(next)) { setOpen(false); setForm(blank); toast("Transaction saved"); } };
+  const del = async (id) => { const next = structuredClone(db); next.transactions = next.transactions.filter((x) => x.id !== id); if (await update(next)) toast("Transaction deleted", "error"); };
   const allRows = allTx(db).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
   const rows = allRows.filter((t) => !dateFilter || String(t.date || "").slice(0, 10) === dateFilter);
   const summaryRows = dateFilter ? rows : allRows;
@@ -479,13 +514,14 @@ function TransactionsView({ db, update, canWrite }) {
 function SettingsView({ db, update, me, onSignOut, canWrite }) {
   const [fee, setFee] = useState(db.settings.lateFeePerDay);
   const [pw, setPw] = useState({ current: "", next: "" }); const [msg, setMsg] = useState("");
-  const changePw = async () => { setMsg(""); try { await api("/change-password", { method: "POST", body: pw }); alert("Password changed. Please sign in again."); window.dispatchEvent(new Event("wabi-signed-out")); setPw({ current: "", next: "" }); } catch (e) { setMsg(e.message); } };
+  const changePw = async () => { setMsg(""); try { await api("/change-password", { method: "POST", body: pw }); toast("Password changed"); setTimeout(() => window.dispatchEvent(new Event("wabi-signed-out")), 1500); setPw({ current: "", next: "" }); } catch (e) { setMsg(e.message); } };
+  const saveSettings = async () => { const next = structuredClone(db); next.settings.lateFeePerDay = +fee || 0; if (await update(next)) toast("Settings saved"); };
   return (<div style={{ maxWidth: 560 }}>
     <SectionHead title="Settings" subtitle={`Signed in as ${me?.name || me?.username} · ${me?.role === "admin" ? "Admin" : "Staff"}.`} />
     <AppearanceSettings />
     {canWrite && (<div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 12, padding: 20, marginBottom: 20 }}>
       <Field label="Late fee per day (₹)" hint="Used to work out overdue rental charges."><TextInput type="number" value={fee} onChange={(e) => setFee(e.target.value)} style={{ maxWidth: 200 }} /></Field>
-      <Btn onClick={() => { const next = structuredClone(db); next.settings.lateFeePerDay = +fee || 0; update(next); }}><Check size={16} /> Save settings</Btn>
+      <Btn onClick={saveSettings}><Check size={16} /> Save settings</Btn>
     </div>)}
     <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 12, padding: 20, marginBottom: 20 }}>
       <h3 style={{ fontFamily: SERIF, color: C.maroonDk, margin: "0 0 10px", fontSize: 18 }}>Change your password</h3>
@@ -529,11 +565,11 @@ function UsersView({ me }) {
     try {
       if (edit) await api("/users/" + encodeURIComponent(edit), { method: "PUT", body: { name: form.name, role: form.role, permissions: form.permissions, password: form.password || undefined } });
       else await api("/users", { method: "POST", body: form });
-      await load(); setOpen(false);
+      await load(); setOpen(false); toast(edit ? "User updated" : "User added");
     } catch (e) { setErr(e.message); }
   };
-  const del = async (u) => { if (!confirm(`Remove ${u.name || u.username}?`)) return; try { await api("/users/" + encodeURIComponent(u.username), { method: "DELETE" }); load(); } catch (e) { alert(e.message); } };
-  if (!users) return <div style={{ color: C.muted }}>Loading users…</div>;
+  const del = async (u) => { if (!confirm(`Remove ${u.name || u.username}?`)) return; try { await api("/users/" + encodeURIComponent(u.username), { method: "DELETE" }); load(); toast("User removed", "error"); } catch (e) { alert(e.message); } };
+  if (!users) return <div className="section-loader"><div className="loader-ring" /><span>Loading users…</span></div>;
   return (<div>
     <SectionHead title="Users & access" subtitle="Add staff logins and choose what each person can see. New staff can use Sales and Rentals by default; give them more only if needed."
       action={<Btn kind="gold" onClick={openNew}><Plus size={16} /> Add user</Btn>} />
@@ -593,7 +629,7 @@ function Login({ onLogin }) {
       <Field label="Username"><TextInput value={u} onChange={(e) => setU(e.target.value)} autoComplete="username" required autoFocus /></Field>
       <Field label="Password"><TextInput type="password" autoComplete="current-password" required value={p} onChange={(e) => setP(e.target.value)} /></Field>
       {err && <div style={{ color: C.red, fontSize: 13, marginBottom: 10 }}>{err}</div>}
-      <button type="submit" disabled={busy} className="btn btn-primary full-width">{busy ? "Signing in…" : "Sign in"}<ArrowRight size={16} /></button>
+      <button type="submit" disabled={busy} className={`btn btn-primary full-width ${busy ? 'btn-loading' : ''}`}>{busy ? <><span className="loader-spinner" style={{ width: 16, height: 16 }} /> Signing in…</> : <>Sign in<ArrowRight size={16} /></>}</button>
       <div className="login-note"><Lock size={13} /> Your shop. Your private workspace.</div>
     </form>
   </div>);
@@ -662,6 +698,7 @@ function Shell() {
   const update = async (next) => {
     if (saving.current) return false;
     saving.current = true; setSync("saving");
+    const savingToast = toast("Saving…", "loading", true);
     try {
       const baseData = structuredClone(baseline.current || db);
       const { status, data } = await api("/data", { method: "PUT", body: { data: next, baseData, baseVersion: version.current } });
@@ -669,21 +706,21 @@ function Shell() {
       version.current = data.version; baseline.current = structuredClone(data.data); setDb(data.data); setSync("saved"); setTimeout(() => setSync("idle"), 1200);
       return true;
     } catch (error) { setSync("error"); alert(error.message || 'Could not save. Please try again.'); return false; }
-    finally { saving.current = false; }
+    finally { saving.current = false; dismissToast(savingToast); }
   };
   const signOut = async () => { try { await api('/logout', { method: 'POST', body: {} }); clearSession(); } catch (error) { alert(error.message); } };
 
   if (!authed) return <>{fontsLink}<Login onLogin={(u) => { setLoadError(''); setMe(u); setAuthed(true); window.dispatchEvent(new CustomEvent('wabi-user', { detail: u })); }} /></>;
   if (loadError) return <div className="p-8" role="alert">Could not load your shop: {loadError} <Btn onClick={() => location.reload()}>Retry</Btn></div>;
-  if (!db || !me || !tab) return <div style={{ minHeight: "100vh", background: C.cream, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: SANS, color: C.muted }}>{fontsLink}Loading your shop…</div>;
+  if (!db || !me || !tab) return <div className="shop-loader">{fontsLink}<div className="loader-brand"><span className="loader-mark">w.</span></div><div className="loader-text"><strong>Wabi Sabi</strong><p>Loading your shop…</p></div><div className="loader-spinner" /><div className="loader-shimmer" /></div>;
 
   let View;
   if (tab === "Users") View = UsersView;
   else { const map = { Dashboard, Sales: SalesView, Rentals: RentalsView, Inventory: InventoryView, Customers: CustomersView, Transactions: TransactionsView, Settings: SettingsView }; View = map[tab]; }
   const SyncBadge = () => {
-    const m = { idle: null, saving: ["Saving…", C.muted, Cloud], saved: ["Saved", C.green, Cloud], error: ["Not saved", C.red, CloudOff] }[sync];
-    if (!m) return null; const [txt, col, Icon] = m;
-    return <span className="flex items-center gap-1" style={{ color: col, fontSize: 12, fontWeight: 600 }}><Icon size={14} /> {txt}</span>;
+    const m = { idle: null, saving: ["Saving…", C.muted, Cloud, "sync-saving"], saved: ["Saved", C.green, Cloud, "sync-saved"], error: ["Not saved", C.red, CloudOff, ""] }[sync];
+    if (!m) return null; const [txt, col, Icon, anim] = m;
+    return <span className={`flex items-center gap-1 ${anim}`} style={{ color: col, fontSize: 12, fontWeight: 600 }}><Icon size={14} /> {txt}</span>;
   };
   const NavBtn = ({ name }) => {
     const Icon = ICONS[name]; const active = tab === name; return (
@@ -693,6 +730,7 @@ function Shell() {
   };
 
   return (<div className="app-shell">
+    <ToastContainer />
     {fontsLink}
     <aside className="sidebar">
       <div className="brand"><span className="brand-mark">w.</span><div>Wabi Sabi<small>SALES &amp; RENTALS</small></div></div>
@@ -705,7 +743,7 @@ function Shell() {
       <header className="topbar"><div className="breadcrumb"><span>Workspace</span><ChevronRight size={14} /><strong>{tab}</strong></div><div className="topbar-actions"><SyncBadge /><span className="today-label">{new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}</span><ThemeToggle /><span className="avatar small-avatar">{(me.name || me.username).slice(0, 1).toUpperCase()}</span><button className="mobile-signout" onClick={signOut} aria-label="Sign out"><LogOut size={17} /></button></div></header>
       <nav className="mobile-nav" aria-label="Mobile navigation">{nav.map(n => <NavBtn key={n} name={n} />)}</nav>
       <main>
-        <View key={tab} db={db} update={update} me={me} onSignOut={signOut} canWrite={canWrite(tab)} initialOpen={initialOpen} onNavigate={navigate} canAccess={allowed} canCreate={canWrite} metrics={{ today, monthOf, allTx, inr, saleBalance, rentalCharges, rentalDeposit, available, saleTotal, itemById, rentalStatus }} />
+        <View key={tab} db={db} update={update} me={me} onSignOut={signOut} canWrite={canWrite(tab)} initialOpen={initialOpen} onNavigate={navigate} canAccess={allowed} canCreate={canWrite} onNotify={toast} metrics={{ today, monthOf, allTx, inr, saleBalance, rentalCharges, rentalDeposit, available, saleTotal, itemById, rentalStatus }} />
       </main>
     </div>
   </div>);

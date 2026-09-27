@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { chromium, expect } = require('@playwright/test');
+const ExcelJS = require('exceljs');
 
 const root = path.join(__dirname, '..');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'wabi-test-'));
@@ -17,7 +18,7 @@ async function request(route, method = 'GET', body, token = admin) {
   return { status: response.status, data: await response.json(), cookie: response.headers.get('set-cookie')?.split(';')[0] };
 }
 before(async () => {
-  server = spawn(process.execPath, ['tests/helpers/server.cjs'], { cwd: root, env: { ...process.env, APP_ORIGIN: '' }, windowsHide: true });
+  server = spawn(process.execPath, ['tests/helpers/server.cjs'], { cwd: root, env: { ...process.env, APP_ORIGIN: '', CRON_SECRET: 'test-cron-secret-1234' }, windowsHide: true });
   base = await new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('Server startup timed out')), 15000);
     server.stdout.on('data', chunk => {
@@ -39,6 +40,11 @@ after(async () => {
 });
 
 test('authentication, seeded data, permissions, validation, conflicts, and revoked accounts', async () => {
+  assert.equal((await fetch(base + '/api/cron/keepalive')).status, 401);
+  assert.equal((await fetch(base + '/api/cron/keepalive', { headers: { Authorization: 'Bearer wrong' } })).status, 401);
+  const keepalive = await fetch(base + '/api/cron/keepalive', { headers: { Authorization: 'Bearer test-cron-secret-1234' } });
+  assert.equal(keepalive.status, 200);
+  assert.deepEqual(await keepalive.json(), { ok: true });
   assert.equal((await request('/data', 'GET', undefined, null)).status, 401);
   assert.equal((await request('/login', 'POST', { username: 'admin', password: 'wrong' }, null)).status, 401);
   const original = (await request('/data')).data;
@@ -47,6 +53,18 @@ test('authentication, seeded data, permissions, validation, conflicts, and revok
   await request('/users', 'POST', { username: 'teststaff', email: 'staff@example.com', password: 'staff-test-password', permissions: { Sales: 'write', Rentals: 'write' } });
   const staff = (await request('/login', 'POST', { username: 'teststaff', password: 'staff-test-password' }, null)).cookie;
   assert.equal((await request('/users', 'GET', undefined, staff)).status, 403);
+  assert.equal((await fetch(base + '/api/export')).status, 401);
+  assert.equal((await fetch(base + '/api/export', { headers: { Cookie: staff } })).status, 403);
+  const exportResponse = await fetch(base + '/api/export', { headers: { Cookie: admin } });
+  assert.equal(exportResponse.status, 200);
+  assert.match(exportResponse.headers.get('content-disposition'), /attachment; filename="wabi-sabi-backup-\d{4}-\d{2}-\d{2}\.xlsx"/);
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(Buffer.from(await exportResponse.arrayBuffer()));
+  assert.deepEqual(workbook.worksheets.map(sheet => sheet.name), ['Backup info', 'Inventory', 'Customers', 'Sales', 'Rentals', 'Transactions', 'Settings', 'Users']);
+  assert.equal(workbook.getWorksheet('Inventory').rowCount, 25);
+  assert.equal(workbook.getWorksheet('Customers').rowCount, 2);
+  assert.equal(workbook.getWorksheet('Users').rowCount, 3);
+  assert.equal(workbook.getWorksheet('Settings').getRow(2).getCell(1).value, 'lateFeePerDay');
   const attempted = structuredClone(original.data);
   attempted.settings.lateFeePerDay = 1;
   attempted.inventory[0].salePrice = 1;
@@ -83,6 +101,12 @@ test('authentication, seeded data, permissions, validation, conflicts, and revok
   const latest = (await request('/data')).data;
   assert.equal(latest.data.settings.lateFeePerDay, 1200);
   assert.equal(latest.data.sales.some(sale => sale.id === 'GR-STAFF-002'), true);
+  const latestExport = new ExcelJS.Workbook();
+  const latestResponse = await fetch(base + '/api/export', { headers: { Cookie: admin } });
+  await latestExport.xlsx.load(Buffer.from(await latestResponse.arrayBuffer()));
+  assert.equal(latestExport.getWorksheet('Sales').rowCount, latest.data.sales.length + 1);
+  assert.equal(latestExport.getWorksheet('Sales').getRow(2).getCell(1).value, 'GR-STAFF-001');
+  assert.equal(latestExport.getWorksheet('Settings').getRow(2).getCell(2).value, 1200);
   assert.equal((await request('/me')).status, 200);
   assert.equal((await request('/me', 'GET', undefined, staff)).status, 200);
   const bad = structuredClone(latest.data);
@@ -149,6 +173,9 @@ test('browser: sales, customer reuse, ledger, rentals, return, persistence, and 
     await page.getByLabel('Password', { exact: true }).fill('owner-test-password');
     await page.getByRole('button', { name: 'Sign in', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Dashboard', exact: true })).toBeVisible();
+    const backupDownload = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Download Excel backup' }).click();
+    assert.match((await backupDownload).suggestedFilename(), /^wabi-sabi-backup-\d{4}-\d{2}-\d{2}\.xlsx$/);
     assert.equal(await page.evaluate(() => localStorage.getItem('wabi_token')), null);
     await page.getByRole('button', { name: 'Sales', exact: true }).click();
     await page.getByRole('button', { name: 'New sale', exact: true }).click();

@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { ArrowUpRight, ArrowDownLeft, Wallet, TrendingUp, CircleDollarSign, ShoppingBag, CalendarClock, Package, ArrowRight, Plus, ReceiptText, Banknote, Smartphone, Landmark, CreditCard, FileText } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { ArrowUpRight, ArrowDownLeft, Wallet, TrendingUp, CircleDollarSign, ShoppingBag, CalendarClock, Package, ArrowRight, Plus, ReceiptText, Banknote, Smartphone, Landmark, CreditCard, FileText, Download } from 'lucide-react';
+import { isMonthEndBackupWindow } from './backup-reminder';
 
 function PaymentMethods({ transactions, month, monthOf, inr }) {
   const methods = [
@@ -20,10 +21,40 @@ function PaymentMethods({ transactions, month, monthOf, inr }) {
   </section>;
 }
 
-export default function Overview({ db, me, onNavigate, canAccess, canCreate, metrics }) {
+export default function Overview({ db, me, onNavigate, canAccess, canCreate, onNotify, metrics }) {
   const { today, monthOf, allTx, inr, saleBalance, rentalCharges, rentalDeposit, available, saleTotal, itemById, rentalStatus } = metrics;
   const [month, setMonth] = useState(monthOf(today()));
   const [day, setDay] = useState(today());
+  const [currentDate, setCurrentDate] = useState(() => new Date());
+  const [backupBusy, setBackupBusy] = useState(false);
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentDate(new Date()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+  const backupDue = isMonthEndBackupWindow(currentDate);
+  const downloadBackup = async () => {
+    if (backupBusy) return;
+    setBackupBusy(true);
+    try {
+      const response = await fetch('/api/export', { credentials: 'same-origin' });
+      if (!response.ok) {
+        if (response.status === 401) window.dispatchEvent(new Event('wabi-signed-out'));
+        const problem = await response.json().catch(() => ({}));
+        throw new Error(problem.error || 'Could not create the backup. Please try again.');
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = response.headers.get('Content-Disposition')?.match(/filename="([^"]+)"/)?.[1] || 'wabi-sabi-backup.xlsx';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      onNotify('Backup downloaded');
+    } catch (error) { onNotify(error.message, 'error'); }
+    finally { setBackupBusy(false); }
+  };
   const tx = allTx(db);
   const dailyRows = tx.filter(t => (t.date || '').slice(0, 10) === day).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   const dailyIncome = dailyRows.filter(t => t.type === 'Income').reduce((n, t) => n + Number(t.amount || 0), 0);
@@ -68,6 +99,11 @@ export default function Overview({ db, me, onNavigate, canAccess, canCreate, met
   return <div className="overview">
     <div className="section-head dashboard-heading"><div><div className="eyebrow">YOUR BUSINESS, AT A GLANCE</div><h2>Dashboard</h2><p>Welcome back, {firstName}. Here’s how your shop is doing.</p></div><label className="month-picker"><CalendarClock size={16} /><span className="sr-only">Dashboard month</span><input aria-label="Dashboard month" type="month" value={month} onChange={e => e.target.value && setMonth(e.target.value)} /></label></div>
     <div className="welcome-banner"><div className="banner-copy"><span className="banner-icon"><ShoppingBag size={25} /></span><div><h3>A little order. More room to create.</h3><p>Keep your sales, rentals, and beautiful things in sync.</p></div></div><div className="banner-actions">{canCreate('Sales') && <button className="btn btn-primary" onClick={() => onNavigate('Sales', true)}><Plus size={16} /> New sale</button>}{canCreate('Rentals') && <button className="btn btn-ghost" onClick={() => onNavigate('Rentals', true)}>New rental <ArrowUpRight size={16} /></button>}</div></div>
+    {me?.role === 'admin' && <section className={`backup-panel ${backupDue ? 'backup-panel-due' : ''}`} aria-label="Data backup">
+      <span className="backup-icon"><Download size={20} /></span>
+      <div className="backup-copy"><h3>{backupDue ? 'Month-end backup reminder' : 'Download a data backup'}</h3><p>{backupDue ? 'The month is ending. Save a fresh copy of your shop data to your device.' : 'Keep a local copy of your shop data whenever you need one.'} The Excel file includes inventory, customers, sales, rentals, transactions, settings and user profiles.</p></div>
+      <button className="btn btn-primary" type="button" onClick={downloadBackup} disabled={backupBusy}><Download size={16} /> {backupBusy ? 'Preparing backup…' : 'Download Excel backup'}</button>
+    </section>}
     <div className="metric-grid">{cards.map(({ label, value, icon: Icon, color, caption }) => <article className="metric-card" key={label}><div className="metric-top"><span>{label}</span><span className={`metric-icon ${color}`}><Icon size={19} /></span></div><strong>{inr(value)}</strong><p>{caption}</p></article>)}</div>
     <PaymentMethods transactions={tx} month={month} monthOf={monthOf} inr={inr} />
     <section className="panel daily-transactions">

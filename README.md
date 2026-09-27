@@ -134,6 +134,23 @@ update `APP_ORIGIN` and redeploy before testing login or writes. Preview deploym
 need an origin matching their own URL; a production-only origin rejects preview
 mutations. No `PORT` override is needed.
 
+### Keep the free Supabase project active
+
+`vercel.json` schedules `/api/cron/keepalive` daily at 06:00 UTC. The endpoint
+reads the live shop and user profiles from Supabase and reports a failure if the
+database cannot be reached. It requires Vercel's `CRON_SECRET` bearer token;
+ordinary visitors cannot invoke the database reads.
+
+Before deploying, add a random `CRON_SECRET` of at least 16 characters to the
+**Production** environment variables in Vercel, then redeploy. Vercel sends it
+automatically with scheduled requests. Check **Settings → Cron Jobs** and the
+function logs after deployment for successful `200` responses. A missing secret
+produces `401`, and a database failure produces a non-`200` response.
+
+Supabase Free projects can still pause if activity is deemed insufficient, and
+Vercel cron delivery is best effort. Monitor Supabase's pause warning emails.
+For guaranteed protection from inactivity pausing, use a paid Supabase plan.
+
 Push these files to the connected GitHub branch before deploying. `.vercelignore`
 excludes local secrets, legacy data files, test doubles, and test artifacts.
 After deployment, `/api/health` must return `{"ok":true,"engine":"supabase"}`;
@@ -154,4 +171,3 @@ Browser tests use Edge on Windows and Chromium elsewhere. Tests never read or
 write the production database. Runtime entry points are `src/server.js` (startup),
 `src/app.js` (API), `src/auth-client.js` (cookie sessions), and `src/supabase-db.js`
 (database adapter). `/api/health` reports the selected Supabase engine.
-
