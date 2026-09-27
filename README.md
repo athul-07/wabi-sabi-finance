@@ -109,6 +109,26 @@ requires related order information for totals. Appearance is saved per account.
 
 ## Development and verification
 
+### Deploy on Vercel
+
+Use the Express preset and repository root (`./`). `vercel.json` sets the build
+command to `npm run build`; leave Output Directory at its Express preset default.
+Vercel serves frontend assets from `public/` and uses the root `app.js` export
+for the API. Local `npm start` still uses `src/server.js`.
+
+Add `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`,
+`NODE_ENV=production`, and `APP_ORIGIN=https://your-actual-deployment-domain`
+in Vercel's environment variables. Use the exact HTTPS origin, without a trailing
+slash. Never use the localhost value in production. If the assigned domain differs,
+update `APP_ORIGIN` and redeploy before testing login or writes. Preview deployments
+need an origin matching their own URL; a production-only origin rejects preview
+mutations. No `PORT` override is needed.
+
+Push these files to the connected GitHub branch before deploying. `.vercelignore`
+excludes local secrets, legacy data files, test doubles, and test artifacts.
+After deployment, `/api/health` must return `{"ok":true,"engine":"supabase"}`;
+then verify sign-in and a save. The existing Supabase schema/data/accounts are reused.
+
 ```bash
 npm run build
 npm test
