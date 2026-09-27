@@ -1,3 +1,3 @@
--- Run after recreating the owner and staff in Supabase Auth and verifying login.
--- Removes obsolete custom password hashes; does not touch Auth accounts/shop data.
-drop table if exists public.wabi_users;
+-- Legacy password hashes are preserved in public.wabi_legacy_users by schema.sql.
+-- This file intentionally performs no deletion: public.wabi_users now stores
+-- Supabase Auth-backed application accounts.

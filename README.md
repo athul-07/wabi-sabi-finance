@@ -71,8 +71,9 @@ This CLI requires the server secret and should only run on a trusted machine.
 
 Old custom logins are **not** Supabase Auth accounts and cannot sign in anymore.
 Create the owner and recreate staff with their real email addresses and new
-passwords. After verifying those accounts, run `supabase/cleanup-legacy-auth.sql`
-to remove the obsolete `wabi_users` password table from the earlier integration.
+passwords. The updated `supabase/schema.sql` removes the unused legacy password
+table only when it is empty; if it contains rows, they remain preserved in
+`wabi_legacy_users`. No separate cleanup command is needed.
 The local seed and exporter have been removed. The application never opens
 SQLite, local JSON stores, or the legacy `data/` directory. Any remaining legacy
 files can be removed manually; they have no runtime role.
@@ -94,12 +95,17 @@ Logout revokes the current session. Password changes sign out all sessions;
 admin password resets revoke the target user's sessions. Cross-origin mutations
 are rejected, and API responses are marked `no-store`.
 
-`wabi_profiles` stores usernames, names, email addresses, roles, page permissions,
-and preferences. It references `auth.users`; it stores no passwords. Profiles are
+`wabi_users` stores usernames, names, email addresses, roles, page permissions,
+and preferences. It references `auth.users`; it stores no passwords. Users are
 created only from trusted `app_metadata` provided by administrative provisioning.
-`wabi_kv` stores the shop document as JSONB, including customers, inventory, sales,
-rentals, transactions, settings, and a version for atomic conflict checks. Both
-tables deny direct browser access through grants and row-level security.
+`wabi_inventory` and `wabi_customers` each store one record per unique ID, with
+queryable columns and the complete original record in JSONB. `wabi_sales`,
+`wabi_rentals`, and `wabi_transactions` store their respective records by ID.
+`wabi_shop_meta` stores settings and the version used for atomic conflict checks.
+The schema migrates all records from the old `wabi_kv` snapshot and removes that
+table after a successful copy. If `wabi_kv` contains unexpected keys, migration
+stops without removing it. All application tables deny direct browser access
+through grants and row-level security.
 
 Staff permissions are checked on the server for reads and writes. Order-entry
 screens receive customer names/phones and stock lookup fields they need, even

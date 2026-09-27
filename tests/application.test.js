@@ -127,6 +127,12 @@ test('browser: sales, customer reuse, ledger, rentals, return, persistence, and 
     await expect(page.getByText('GR-001', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Transactions', exact: true }).click();
     await expect(page.getByText('Sale GR-001', { exact: true })).toBeVisible();
+    const transactionDate = page.getByLabel('Filter by date');
+    assert.match(await transactionDate.inputValue(), /^\d{4}-\d{2}-\d{2}$/);
+    await transactionDate.fill('2000-01-01');
+    await expect(page.getByText('Sale GR-001', { exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: 'All dates', exact: true }).click();
+    await expect(page.getByText('Sale GR-001', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Rentals', exact: true }).click();
     await page.getByRole('button', { name: 'New rental', exact: true }).click();
     await page.getByLabel('Phone', { exact: false }).fill('9000000000');

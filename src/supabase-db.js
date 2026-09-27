@@ -16,17 +16,14 @@ module.exports = function createDatabase(client) {
   return {
     admin: client.auth.admin,
     engine: 'supabase',
-    getKV: async k => (await run(client.from('wabi_kv').select('v').eq('k', k).maybeSingle()))?.v ?? null,
-    setKV: (k, v) => run(client.from('wabi_kv').upsert({ k, v }, { onConflict: 'k' })),
-    compareAndSetKV: async (k, v, version) => {
-      const rows = await run(client.from('wabi_kv').update({ v }).eq('k', k).eq('v->>version', String(version)).select('k'));
-      return rows.length === 1;
-    },
-    getUser: username => run(client.from('wabi_profiles').select('*').eq('username', username).maybeSingle()),
-    getUserById: id => run(client.from('wabi_profiles').select('*').eq('id', id).maybeSingle()),
-    listUsers: () => run(client.from('wabi_profiles').select('*').order('username')),
-    insertUser: user => run(client.from('wabi_profiles').insert(user).select().single()),
-    updateUser: (id, values) => run(client.from('wabi_profiles').update(values).eq('id', id).select().single()),
+    getShop: () => run(client.rpc('wabi_get_shop')),
+    compareAndSetShop: async (record, version) =>
+      (await run(client.rpc('wabi_save_shop', { shop_record: record, expected_version: version }))) === true,
+    getUser: username => run(client.from('wabi_users').select('*').eq('username', username).maybeSingle()),
+    getUserById: id => run(client.from('wabi_users').select('*').eq('id', id).maybeSingle()),
+    listUsers: () => run(client.from('wabi_users').select('*').order('username')),
+    insertUser: user => run(client.from('wabi_users').insert(user).select().single()),
+    updateUser: (id, values) => run(client.from('wabi_users').update(values).eq('id', id).select().single()),
     isSessionActive: (id, userId) => run(client.rpc('wabi_session_active', { session_id: id, account_id: userId })),
     revokeUserSessions: id => run(client.rpc('wabi_revoke_sessions', { account_id: id })),
   };

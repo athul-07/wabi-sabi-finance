@@ -11,7 +11,7 @@ import {
 /* ---------------- theme ---------------- */
 const C = {
   maroon: "var(--accent)", maroonDk: "var(--ink)", maroon2: "var(--surface-soft)",
-  gold: "var(--accent)", goldSoft: "var(--muted)", cream: "var(--canvas)", card: "var(--surface)",
+  gold: "var(--gold)", goldSoft: "var(--muted)", cream: "var(--canvas)", card: "var(--surface)",
   ink: "var(--ink)", muted: "var(--muted)", line: "var(--line)",
   green: "var(--green)", red: "var(--red)",
 };
@@ -37,7 +37,7 @@ function ThemeProvider({ children }) {
   };
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#151518' : '#f7f7f9');
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#191315' : '#f6f1e8');
   }, [theme]);
   return <ThemeContext.Provider value={{ theme, setTheme }}>{children}</ThemeContext.Provider>;
 }
@@ -55,13 +55,13 @@ const monthOf = (d) => (d || "").slice(0, 7);
 const inr = (n) => (n < 0 ? "-" : "") + "₹" + Math.abs(Math.round(+n || 0)).toLocaleString("en-IN");
 const daysBetween = (a, b) => Math.round((new Date(b) - new Date(a)) / 86400000);
 
-const PRODUCT_CATS = ["Bride","Groom","Save the Date","Bride to Be","Party wear","Maternity","Model Shoot","Dance Costume","Event Costume","Jewellery","Accessories","Other"];
-const ITEM_STATUSES = ["Available","Reserved","Rented","Cleaning","Repair","Sold","Retired"];
-const PAY_MODES = ["Cash","UPI","Bank Transfer","Card","Cheque"];
-const INCOME_CATS = ["Sales","Rentals","Customization","Accessories","Late Fee","Damage Charge","Cleaning Charge","Other Income"];
-const EXPENSE_CATS = ["Stock Purchase","Cleaning/Laundry","Repair/Maintenance","Alteration","Staff Salary","Rent","Electricity","Marketing/Ads","Courier/Transport","Packaging","Software/Subscriptions","Refund","Taxes/Fees","Other Expense"];
-const RENT_ACTIVE = ["Booked","Reserved","Out","Overdue"];
-const PERM_PAGES = ["Dashboard","Sales","Rentals","Inventory","Customers","Transactions","Settings"];
+const PRODUCT_CATS = ["Bride", "Groom", "Save the Date", "Bride to Be", "Party wear", "Maternity", "Model Shoot", "Dance Costume", "Event Costume", "Jewellery", "Accessories", "Other"];
+const ITEM_STATUSES = ["Available", "Reserved", "Rented", "Cleaning", "Repair", "Sold", "Retired"];
+const PAY_MODES = ["Cash", "UPI", "Bank Transfer", "Card", "Cheque"];
+const INCOME_CATS = ["Sales", "Rentals", "Customization", "Accessories", "Late Fee", "Damage Charge", "Cleaning Charge", "Other Income"];
+const EXPENSE_CATS = ["Stock Purchase", "Cleaning/Laundry", "Repair/Maintenance", "Alteration", "Staff Salary", "Rent", "Electricity", "Marketing/Ads", "Courier/Transport", "Packaging", "Software/Subscriptions", "Refund", "Taxes/Fees", "Other Expense"];
+const RENT_ACTIVE = ["Booked", "Reserved", "Out", "Overdue"];
+const PERM_PAGES = ["Dashboard", "Sales", "Rentals", "Inventory", "Customers", "Transactions", "Settings"];
 
 /* ---------------- api ---------------- */
 async function api(path, { method = "GET", body } = {}) {
@@ -203,7 +203,7 @@ function SalesView({ db, update, canWrite, initialOpen }) {
     if (await update(next)) setOpen(false);
   };
   const del = (id) => { const next = structuredClone(db); next.sales = next.sales.filter((x) => x.id !== id); update(next); };
-  const head = ["Sale","Date","Customer","Item","Qty","Total","Received","Balance","Status"]; if (canWrite) head.push("");
+  const head = ["Sale", "Date", "Customer", "Item", "Qty", "Total", "Received", "Balance", "Status"]; if (canWrite) head.push("");
   return (<div>
     <SectionHead title="Sales" readonly={!canWrite} subtitle="One row per item sold. Enter a phone — a saved customer fills in, a new one is saved automatically. The amount received posts to the ledger on its own."
       action={canWrite ? <Btn kind="gold" onClick={openNew}><Plus size={16} /> New sale</Btn> : null} />
@@ -256,19 +256,21 @@ function RentalsView({ db, update, canWrite, initialOpen }) {
   };
   const del = (id) => { const next = structuredClone(db); next.rentals = next.rentals.filter((x) => x.id !== id); update(next); };
   const markReturned = (r) => { const next = structuredClone(db); next.rentals[next.rentals.findIndex((x) => x.id === r.id)] = { ...r, actualReturn: today() }; update(next); };
-  const head = ["Booking","Customer","Item","Return due","Charges","Received","Balance","Status","Deposit held"]; if (canWrite) head.push("");
+  const head = ["Booking", "Customer", "Item", "Return due", "Charges", "Received", "Balance", "Status", "Deposit held"]; if (canWrite) head.push("");
   return (<div>
     <SectionHead title="Rentals" readonly={!canWrite} subtitle="One row per booking. Late fee, status and deposit are worked out for you. The rent received posts to the ledger automatically."
       action={canWrite ? <Btn kind="gold" onClick={openNew}><Plus size={16} /> New rental</Btn> : null} />
     <PageStats items={[["Active rentals", db.rentals.filter(r => !r.actualReturn).length, CalendarClock], ["Overdue returns", db.rentals.filter(r => rentalStatus(r) === 'Overdue').length, Package], ["Rental payments", inr(db.rentals.reduce((n, r) => n + Number(r.received || 0), 0)), Wallet]]} />
     <TableWrap head={head} empty={db.rentals.length === 0} emptyText="No rentals yet.">
-      {db.rentals.map((r) => { const st = rentalStatus(r); const held = Math.max(0, rentalDeposit(db, r) - (+r.damage || 0) - (+r.depositRefunded || 0)); return (<tr key={r.id}>
-        <Td>{r.id}</Td><Td>{custName(db, r.phone) || r.customer || <span style={{ color: C.muted }}>—</span>}</Td><Td>{itemById(db, r.itemId)?.name || r.itemId}</Td>
-        <Td>{r.returnDue || "—"}</Td><Td>{inr(rentalCharges(db, r))}</Td><Td>{inr(r.received)}</Td><Td>{inr(Math.max(0, rentalCharges(db, r) - (+r.received || 0)))}</Td>
-        <Td><Pill tone={statusTone(st)}>{st}</Pill></Td><Td>{inr(held)}</Td>
-        {canWrite && <Td><div className="flex gap-2">{st !== "Returned" && <button title="Mark returned" onClick={() => markReturned(r)} style={{ color: C.green }}><Check size={16} /></button>}
-          <button aria-label="Edit record" onClick={() => openEdit(r)} style={{ color: C.maroon }}><Pencil size={16} /></button><button aria-label="Delete record" onClick={() => del(r.id)} style={{ color: C.red }}><Trash2 size={16} /></button></div></Td>}
-      </tr>); })}
+      {db.rentals.map((r) => {
+        const st = rentalStatus(r); const held = Math.max(0, rentalDeposit(db, r) - (+r.damage || 0) - (+r.depositRefunded || 0)); return (<tr key={r.id}>
+          <Td>{r.id}</Td><Td>{custName(db, r.phone) || r.customer || <span style={{ color: C.muted }}>—</span>}</Td><Td>{itemById(db, r.itemId)?.name || r.itemId}</Td>
+          <Td>{r.returnDue || "—"}</Td><Td>{inr(rentalCharges(db, r))}</Td><Td>{inr(r.received)}</Td><Td>{inr(Math.max(0, rentalCharges(db, r) - (+r.received || 0)))}</Td>
+          <Td><Pill tone={statusTone(st)}>{st}</Pill></Td><Td>{inr(held)}</Td>
+          {canWrite && <Td><div className="flex gap-2">{st !== "Returned" && <button title="Mark returned" onClick={() => markReturned(r)} style={{ color: C.green }}><Check size={16} /></button>}
+            <button aria-label="Edit record" onClick={() => openEdit(r)} style={{ color: C.maroon }}><Pencil size={16} /></button><button aria-label="Delete record" onClick={() => del(r.id)} style={{ color: C.red }}><Trash2 size={16} /></button></div></Td>}
+        </tr>);
+      })}
     </TableWrap>
     {open && canWrite && (<Modal title={edit ? "Edit rental" : "New rental"} onClose={() => setOpen(false)} wide>
       <CustomerFields db={db} form={form} set={setForm} />
@@ -305,19 +307,21 @@ function InventoryView({ db, update, canWrite }) {
   const save = async () => { if (!form.name) return; const next = structuredClone(db); if (edit) next.inventory[next.inventory.findIndex((x) => x.id === edit)] = form; else next.inventory.push(form); if (await update(next)) setOpen(false); };
   const del = (id) => { const next = structuredClone(db); next.inventory = next.inventory.filter((x) => x.id !== id); update(next); };
   const rows = db.inventory.filter((i) => (i.name + i.id + i.category).toLowerCase().includes(q.toLowerCase()));
-  const head = ["ID","Item","Category","Sale price","Rental","Deposit","Stock","Available","Rental status","Item status"]; if (canWrite) head.push("");
+  const head = ["ID", "Item", "Category", "Sale price", "Rental", "Deposit", "Stock", "Available", "Rental status", "Item status"]; if (canWrite) head.push("");
   return (<div>
     <SectionHead title="Inventory" readonly={!canWrite} subtitle="Your outfits and items. “Available” drops as things are sold or rented out, and returns when a rental comes back."
       action={canWrite ? <Btn kind="gold" onClick={openNew}><Plus size={16} /> Add item</Btn> : null} />
     <PageStats items={[["Collection", `${db.inventory.length} items`, Package], ["Units available", db.inventory.reduce((n, i) => n + available(db, i), 0), ShoppingBag], ["On rental / reserved", db.rentals.filter(r => !r.actualReturn).length, CalendarClock]]} />
     <div className="mb-3" style={{ maxWidth: 320 }}><div className="flex items-center gap-2 px-3" style={{ border: `1px solid ${C.line}`, borderRadius: 9, background: C.card }}><Search size={16} color={C.muted} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search items" style={{ border: "none", outline: "none", padding: "8px 0", width: "100%", fontSize: 14 }} /></div></div>
     <TableWrap head={head}>
-      {rows.map((i) => { const av = available(db, i); const lr = liveRental(db, i.id); return (<tr key={i.id}>
-        <Td>{i.id}</Td><Td>{i.name}</Td><Td>{i.category}</Td><Td>{inr(i.salePrice)}</Td><Td>{inr(i.rentalPrice)}</Td><Td>{inr(i.deposit)}</Td>
-        <Td>{i.stockQty}</Td><Td><b style={{ color: av === 0 ? C.red : C.green }}>{av}</b></Td>
-        <Td><Pill tone={lr.tone}>{lr.label}</Pill></Td><Td><Pill tone={i.status === "Available" ? "green" : "grey"}>{i.status}</Pill></Td>
-        {canWrite && <Td><div className="flex gap-2"><button aria-label="Edit record" onClick={() => openEdit(i)} style={{ color: C.maroon }}><Pencil size={16} /></button><button aria-label="Delete record" onClick={() => del(i.id)} style={{ color: C.red }}><Trash2 size={16} /></button></div></Td>}
-      </tr>); })}
+      {rows.map((i) => {
+        const av = available(db, i); const lr = liveRental(db, i.id); return (<tr key={i.id}>
+          <Td>{i.id}</Td><Td>{i.name}</Td><Td>{i.category}</Td><Td>{inr(i.salePrice)}</Td><Td>{inr(i.rentalPrice)}</Td><Td>{inr(i.deposit)}</Td>
+          <Td>{i.stockQty}</Td><Td><b style={{ color: av === 0 ? C.red : C.green }}>{av}</b></Td>
+          <Td><Pill tone={lr.tone}>{lr.label}</Pill></Td><Td><Pill tone={i.status === "Available" ? "green" : "grey"}>{i.status}</Pill></Td>
+          {canWrite && <Td><div className="flex gap-2"><button aria-label="Edit record" onClick={() => openEdit(i)} style={{ color: C.maroon }}><Pencil size={16} /></button><button aria-label="Delete record" onClick={() => del(i.id)} style={{ color: C.red }}><Trash2 size={16} /></button></div></Td>}
+        </tr>);
+      })}
     </TableWrap>
     {open && canWrite && (<Modal title={edit ? "Edit item" : "Add item"} onClose={() => setOpen(false)} wide>
       <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 2fr 1fr" }}>
@@ -351,16 +355,18 @@ function CustomersView({ db, update, canWrite }) {
   const openEdit = (c) => { setEdit(c.id); setForm({ ...c }); setOpen(true); };
   const save = async () => { if (!form.phone && !form.name) return; const next = structuredClone(db); if (edit) next.customers[next.customers.findIndex((x) => x.id === edit)] = form; else next.customers.push({ ...form, id: nextId(next.customers, "CUST-", 3) }); if (await update(next)) setOpen(false); };
   const del = (id) => { const next = structuredClone(db); next.customers = next.customers.filter((x) => x.id !== id); update(next); };
-  const head = ["ID","Name","Phone","Email","Orders","Billed","Outstanding"]; if (canWrite) head.push("");
+  const head = ["ID", "Name", "Phone", "Email", "Orders", "Billed", "Outstanding"]; if (canWrite) head.push("");
   return (<div>
     <SectionHead title="Customers" readonly={!canWrite} subtitle="Everyone you've served. New customers are added here the moment you enter them on a sale or rental."
       action={canWrite ? <Btn kind="gold" onClick={openNew}><Plus size={16} /> Add customer</Btn> : null} />
     <PageStats items={[["Your community", `${db.customers.length} customers`, Users], ["Total orders", db.sales.length + db.rentals.length, ShoppingBag], ["Repeat customers", db.customers.filter(c => custStats(db, c.phone).orders > 1).length, Sparkles]]} />
     <TableWrap head={head} empty={db.customers.length === 0} emptyText="No customers yet.">
-      {db.customers.map((c) => { const st = custStats(db, c.phone); return (<tr key={c.id}>
-        <Td>{c.id}</Td><Td>{c.name}</Td><Td>{c.phone}</Td><Td>{c.email || "—"}</Td><Td>{st.orders}</Td><Td>{inr(st.billed)}</Td><Td>{inr(st.outstanding)}</Td>
-        {canWrite && <Td><div className="flex gap-2"><button aria-label="Edit record" onClick={() => openEdit(c)} style={{ color: C.maroon }}><Pencil size={16} /></button><button aria-label="Delete record" onClick={() => del(c.id)} style={{ color: C.red }}><Trash2 size={16} /></button></div></Td>}
-      </tr>); })}
+      {db.customers.map((c) => {
+        const st = custStats(db, c.phone); return (<tr key={c.id}>
+          <Td>{c.id}</Td><Td>{c.name}</Td><Td>{c.phone}</Td><Td>{c.email || "—"}</Td><Td>{st.orders}</Td><Td>{inr(st.billed)}</Td><Td>{inr(st.outstanding)}</Td>
+          {canWrite && <Td><div className="flex gap-2"><button aria-label="Edit record" onClick={() => openEdit(c)} style={{ color: C.maroon }}><Pencil size={16} /></button><button aria-label="Delete record" onClick={() => del(c.id)} style={{ color: C.red }}><Trash2 size={16} /></button></div></Td>}
+        </tr>);
+      })}
     </TableWrap>
     {open && canWrite && (<Modal title={edit ? "Edit customer" : "Add customer"} onClose={() => setOpen(false)}>
       <Field label="Phone"><TextInput value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></Field>
@@ -374,18 +380,24 @@ function CustomersView({ db, update, canWrite }) {
 }
 function TransactionsView({ db, update, canWrite }) {
   const [open, setOpen] = useState(false);
+  const [dateFilter, setDateFilter] = useState("");
   const blank = { id: "", date: today(), type: "Expense", category: "Rent", desc: "", party: "", mode: "Cash", account: "", amount: "", notes: "" };
   const [form, setForm] = useState(blank);
   const save = async () => { if (!form.amount) return; const next = structuredClone(db); next.transactions.push({ ...form, id: nextId(next.transactions, "TX-", 1) }); if (await update(next)) { setOpen(false); setForm(blank); } };
   const del = (id) => { const next = structuredClone(db); next.transactions = next.transactions.filter((x) => x.id !== id); update(next); };
-  const rows = allTx(db).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  const allRows = allTx(db).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  const rows = allRows.filter((t) => !dateFilter || String(t.date || "").slice(0, 10) === dateFilter);
   const cats = form.type === "Income" ? INCOME_CATS : EXPENSE_CATS;
-  const head = ["Date","Type","Category","Description","Party","Mode","Amount","Source"]; if (canWrite) head.push("");
+  const head = ["Date", "Type", "Category", "Description", "Party", "Mode", "Amount", "Source"]; if (canWrite) head.push("");
   return (<div>
     <SectionHead title="Transactions" readonly={!canWrite} subtitle="Your money diary. Sale and rental receipts appear here on their own (marked Auto). Add expenses and refunds yourself."
       action={canWrite ? <Btn kind="gold" onClick={() => { setForm(blank); setOpen(true); }}><Plus size={16} /> Add expense / entry</Btn> : null} />
-    <PageStats items={[["All-time income", inr(rows.filter(t => t.type === 'Income').reduce((n, t) => n + Number(t.amount || 0), 0)), ArrowDownLeft], ["All-time expenses", inr(rows.filter(t => t.type === 'Expense').reduce((n, t) => n + Number(t.amount || 0), 0)), ArrowUpRight], ["Ledger entries", rows.length, ReceiptText]]} />
-    <TableWrap head={head} empty={rows.length === 0} emptyText="No transactions yet.">
+    <PageStats items={[["All-time income", inr(allRows.filter(t => t.type === 'Income').reduce((n, t) => n + Number(t.amount || 0), 0)), ArrowDownLeft], ["All-time expenses", inr(allRows.filter(t => t.type === 'Expense').reduce((n, t) => n + Number(t.amount || 0), 0)), ArrowUpRight], ["Ledger entries", allRows.length, ReceiptText]]} />
+    <div className="flex items-end gap-2" style={{ flexWrap: "wrap", marginBottom: 14 }}>
+      <Field label="Filter by date"><TextInput type="date" value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} style={{ maxWidth: 220 }} /></Field>
+      {dateFilter && <Btn kind="ghost" small onClick={() => setDateFilter("")}><X size={15} /> All dates</Btn>}
+    </div>
+    <TableWrap head={head} empty={rows.length === 0} emptyText={dateFilter ? "No transactions for this date." : "No transactions yet."}>
       {rows.map((t) => (<tr key={t.id} style={t.auto ? { background: C.cream } : {}}>
         <Td>{t.date}</Td><Td><Pill tone={t.type === "Income" ? "green" : "red"}>{t.type}</Pill></Td><Td>{t.category}</Td><Td>{t.desc || "—"}</Td><Td>{t.party || "—"}</Td><Td>{t.mode || "—"}</Td>
         <Td style={{ color: t.type === "Income" ? C.green : C.red, fontWeight: 600 }}>{inr(t.amount)}</Td>
@@ -472,7 +484,7 @@ function UsersView({ me }) {
   return (<div>
     <SectionHead title="Users & access" subtitle="Add staff logins and choose what each person can see. New staff can use Sales and Rentals by default; give them more only if needed."
       action={<Btn kind="gold" onClick={openNew}><Plus size={16} /> Add user</Btn>} />
-    <TableWrap head={["Name","Username","Role","Access",""]}>
+    <TableWrap head={["Name", "Username", "Role", "Access", ""]}>
       {users.map((u) => (<tr key={u.username}>
         <Td>{u.name}</Td><Td>{u.username}</Td>
         <Td>{u.role === "admin" ? <Pill tone="gold">Admin</Pill> : <Pill tone="grey">Staff</Pill>}</Td>
@@ -617,10 +629,12 @@ function Shell() {
     if (!m) return null; const [txt, col, Icon] = m;
     return <span className="flex items-center gap-1" style={{ color: col, fontSize: 12, fontWeight: 600 }}><Icon size={14} /> {txt}</span>;
   };
-  const NavBtn = ({ name }) => { const Icon = ICONS[name]; const active = tab === name; return (
-    <button onClick={() => navigate(name)} className={`nav-button ${active ? 'active' : ''}`} aria-current={active ? 'page' : undefined}>
-      <Icon size={18} /> <span>{name}</span>{active && <span className="nav-active-dot" />}
-    </button>); };
+  const NavBtn = ({ name }) => {
+    const Icon = ICONS[name]; const active = tab === name; return (
+      <button onClick={() => navigate(name)} className={`nav-button ${active ? 'active' : ''}`} aria-current={active ? 'page' : undefined}>
+        <Icon size={18} /> <span>{name}</span>{active && <span className="nav-active-dot" />}
+      </button>);
+  };
 
   return (<div className="app-shell">
     {fontsLink}
