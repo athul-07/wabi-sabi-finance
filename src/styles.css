@@ -552,6 +552,7 @@ main {
 }
 
 .item-picker-option:hover,
+.item-picker-option.active,
 .item-picker-option[aria-selected="true"] {
   background: var(--accent-soft);
 }
@@ -858,6 +859,11 @@ main {
   gap: 10px;
   align-items: center;
   margin-bottom: 20px;
+}
+
+@media (max-width: 480px) {
+  .daily-transactions .panel-heading { flex-wrap: wrap; }
+  .daily-transactions .month-picker { max-width: 100%; }
 }
 
 .panel-heading h3 {
@@ -1450,10 +1456,51 @@ main {
   font-size: 11px;
 }
 
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  overflow: hidden;
+  background: rgba(27, 20, 19, .6);
+  backdrop-filter: blur(7px);
+  -webkit-backdrop-filter: blur(7px);
+}
+
+.modal-panel {
+  width: 100%;
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .3);
+}
+
+.modal-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
 [role="dialog"] {
-  margin: auto 0;
   animation: modal-in .15s ease-out;
 }
+
+.confirmation-body { text-align: center; }
+.confirmation-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  margin-bottom: 13px;
+  border-radius: 14px;
+}
+.confirmation-delete { color: var(--red); background: var(--red-soft); }
+.confirmation-update { color: var(--accent); background: var(--accent-soft); }
+.confirmation-body p { color: var(--muted); font-size: 14px; line-height: 1.5; }
+.confirmation-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
 
 [role="dialog"] label {
   font-size: 12px !important;
@@ -2013,7 +2060,11 @@ main {
   border: 1px solid var(--line);
   animation: toast-enter 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
   pointer-events: auto;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
+
+.toast span { min-width: 0; }
 
 @keyframes toast-enter {
   0% {
@@ -2030,7 +2081,10 @@ main {
   color: var(--green);
 }
 
-.toast-error svg {
+.toast-updated svg { color: var(--green); }
+
+.toast-error svg,
+.toast-deleted svg {
   color: var(--red);
 }
 
@@ -2040,6 +2094,11 @@ main {
 
 .toast-loading svg {
   color: var(--blue);
+  animation: toast-saving 1.5s linear infinite;
+}
+
+.toast-saving svg {
+  color: var(--accent);
   animation: toast-saving 1.5s linear infinite;
 }
 

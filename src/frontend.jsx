@@ -5,7 +5,8 @@ import {
   LayoutDashboard, ShoppingBag, CalendarClock, Package, Users, ReceiptText,
   Settings as SettingsIcon, ShieldCheck, Plus, Trash2, Pencil, X, Check, Search,
   LogOut, Cloud, CloudOff, Lock, Sun, Moon, ArrowUpRight, ArrowDownLeft,
-  Wallet, TrendingUp, CircleDollarSign, ArrowRight, Sparkles, ChevronRight, Menu
+  Wallet, TrendingUp, CircleDollarSign, ArrowRight, Sparkles, ChevronRight, Menu,
+  AlertCircle, Info, LoaderCircle, CircleCheck
 } from "lucide-react";
 
 /* ---------------- theme ---------------- */
@@ -32,7 +33,7 @@ function ThemeProvider({ children }) {
     applyTheme(value);
     if (account.current) {
       try { await api('/preferences', { method: 'PUT', body: { theme: value } }); }
-      catch (error) { applyTheme(previous); alert(error.message); }
+      catch (error) { applyTheme(previous); toast(error.message, 'error'); }
     }
   };
   useEffect(() => {
@@ -51,9 +52,9 @@ function AppearanceSettings() {
 }
 
 /* ---------------- toasts ---------------- */
-const toast = (msg, type = "success", persistent = false) => {
+const toast = (msg, type = "success", persistent = false, duration = 3000) => {
   const id = Date.now() + Math.random();
-  window.dispatchEvent(new CustomEvent("toast", { detail: { id, msg, type, persistent } }));
+  window.dispatchEvent(new CustomEvent("toast", { detail: { id, msg, type, persistent, duration } }));
   return id;
 };
 const dismissToast = id => window.dispatchEvent(new CustomEvent("toast-dismiss", { detail: id }));
@@ -62,12 +63,12 @@ function ToastContainer() {
   useEffect(() => {
     const timers = new Map();
     const handle = (e) => {
-      const { id, persistent } = e.detail;
+      const { id, persistent, duration } = e.detail;
       setToasts(prev => [...prev, e.detail]);
       if (!persistent) timers.set(id, setTimeout(() => {
         setToasts(prev => prev.filter(t => t.id !== id));
         timers.delete(id);
-      }, 3000));
+      }, duration));
     };
     const dismiss = (e) => {
       clearTimeout(timers.get(e.detail));
@@ -82,7 +83,7 @@ function ToastContainer() {
       timers.forEach(clearTimeout);
     };
   }, []);
-  return <div className="toast-container" role="status" aria-live="polite">{toasts.map(t => <div key={t.id} className={`toast toast-${t.type}`}>{t.type === 'loading' ? <Cloud size={16} /> : t.type === 'error' ? <Trash2 size={16} /> : <Check size={16} />} <span>{t.msg}</span></div>)}</div>;
+  return <div className="toast-container" role="status" aria-live="polite">{toasts.map(t => <div key={t.id} className={`toast toast-${t.type}`}>{['loading', 'saving'].includes(t.type) ? <LoaderCircle size={17} /> : t.type === 'deleted' ? <Trash2 size={16} /> : t.type === 'error' ? <AlertCircle size={16} /> : t.type === 'info' ? <Info size={16} /> : <CircleCheck size={17} />} <span>{t.msg}</span></div>)}</div>;
 }
 
 const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
@@ -169,17 +170,55 @@ const inputStyle = { border: `1px solid ${C.line}`, borderRadius: 10, padding: "
 const TextInput = (p) => <input {...p} style={{ ...inputStyle, ...(p.style || {}) }} />;
 const Select = ({ children, ...p }) => <select {...p} style={{ ...inputStyle, ...(p.style || {}) }}>{children}</select>;
 function Modal({ title, onClose, children, wide }) {
-  return (<div className="fixed inset-0 z-50 flex items-start justify-center p-3 overflow-auto" style={{ background: "rgba(42,35,32,0.55)" }} onClick={onClose}>
-    <div role="dialog" aria-modal="true" aria-label={title} className="w-full my-6" style={{ maxWidth: wide ? 760 : 520, background: C.card, borderRadius: 14, boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }} onClick={(e) => e.stopPropagation()}>
-      <div className="flex items-center justify-between px-5 py-4" style={{ background: C.card, borderBottom: `1px solid ${C.line}`, borderTopLeftRadius: 14, borderTopRightRadius: 14 }}>
+  const dialogRef = useRef(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useEffect(() => {
+    const previousFocus = document.activeElement;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const dialog = dialogRef.current;
+    dialog?.querySelector('input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled])')?.focus();
+    const handleKeyDown = event => {
+      const dialogs = document.querySelectorAll('[role="dialog"]');
+      if (dialogs[dialogs.length - 1] !== dialog) return;
+      if (event.key === 'Escape') { event.preventDefault(); closeRef.current(); }
+      if (event.key !== 'Tab' || !dialog) return;
+      const focusable = [...dialog.querySelectorAll('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')];
+      if (!focusable.length) return;
+      const first = focusable[0], last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+      (previousFocus?.isConnected && previousFocus !== document.body ? previousFocus : document.querySelector('main .section-head button, main button'))?.focus();
+    };
+  }, []);
+  return (<div className="modal-overlay" onClick={onClose}>
+    <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={title} className="modal-panel" style={{ maxWidth: wide ? 760 : 520, background: C.card }} onClick={(e) => e.stopPropagation()}>
+      <div className="modal-header flex items-center justify-between px-5 py-4" style={{ background: C.card, borderBottom: `1px solid ${C.line}`, borderTopLeftRadius: 14, borderTopRightRadius: 14 }}>
         <h3 style={{ color: C.ink, fontSize: 20, fontWeight: 600, margin: 0 }}>{title}</h3>
         <button onClick={onClose} style={{ color: C.goldSoft }} aria-label="Close"><X size={20} /></button>
       </div>
       <div className="p-5">{children}</div>
     </div></div>);
 }
-function Btn({ children, onClick, kind = "primary", type = "button", small }) {
-  return <button type={type} onClick={onClick} className={`btn btn-${kind}${small ? ' btn-small' : ''}`}>{children}</button>;
+function Btn({ children, onClick, kind = "primary", type = "button", small, disabled }) {
+  return <button type={type} onClick={onClick} disabled={disabled} className={`btn btn-${kind}${small ? ' btn-small' : ''}`}>{children}</button>;
+}
+function ConfirmDialog({ action, onResolve }) {
+  const deleting = action.kind === 'delete';
+  const Icon = deleting ? Trash2 : Pencil;
+  return <Modal title={action.title} onClose={() => onResolve(false)}>
+    <div className="confirmation-body">
+      <span className={`confirmation-icon ${deleting ? 'confirmation-delete' : 'confirmation-update'}`}><Icon size={24} /></span>
+      <p>{action.message}</p>
+      <div className="confirmation-actions"><Btn kind="ghost" onClick={() => onResolve(false)}>Cancel</Btn><Btn kind={deleting ? 'danger' : 'primary'} onClick={() => onResolve(true)}><Icon size={16} /> {action.confirmLabel || (deleting ? 'Delete' : 'Update')}</Btn></div>
+    </div>
+  </Modal>;
 }
 function Pill({ children, tone }) {
   return <span className={`pill pill-${tone || 'grey'}`}><i />{children}</span>;
@@ -218,6 +257,8 @@ function ItemPicker({ db, value, onChange, label = "Item" }) {
   const selected = db.inventory.find((i) => i.id === value);
   const [query, setQuery] = useState(selected ? `${selected.id} · ${selected.name}` : "");
   const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const listId = React.useId();
   useEffect(() => {
     if (selected) setQuery(`${selected.id} · ${selected.name}`);
     else if (!value && !open) setQuery("");
@@ -232,12 +273,16 @@ function ItemPicker({ db, value, onChange, label = "Item" }) {
   };
   return (<Field label={label} hint="Type an item ID or name to search.">
     <div className="item-picker">
-      <TextInput aria-label={label} role="combobox" aria-autocomplete="list" aria-expanded={open} aria-controls="inventory-item-options" value={query}
-        onFocus={() => setOpen(true)} onBlur={() => setOpen(false)} onChange={(e) => { setQuery(e.target.value); onChange(""); setOpen(true); }}
-        onKeyDown={(e) => { if (e.key === "Escape") setOpen(false); }} placeholder="Type an item ID or name" autoComplete="off" />
-      {open && <div className="item-picker-options" id="inventory-item-options" role="listbox">
-        {matches.length ? matches.map((item) => <button key={item.id} type="button" role="option" aria-selected={item.id === value}
-          className="item-picker-option" onMouseDown={(e) => e.preventDefault()} onClick={() => choose(item)}>
+      <TextInput aria-label={label} role="combobox" aria-autocomplete="list" aria-expanded={open} aria-controls={listId} aria-activedescendant={open && matches[activeIndex] ? `${listId}-${activeIndex}` : undefined} value={query}
+        onFocus={() => { setOpen(true); setActiveIndex(-1); }} onBlur={() => setOpen(false)} onChange={(e) => { setQuery(e.target.value); onChange(""); setActiveIndex(-1); setOpen(true); }}
+        onKeyDown={(e) => {
+          if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && matches.length) { e.preventDefault(); setOpen(true); setActiveIndex(i => i < 0 ? (e.key === 'ArrowDown' ? 0 : matches.length - 1) : (i + (e.key === 'ArrowDown' ? 1 : -1) + matches.length) % matches.length); }
+          else if (e.key === 'Enter' && open && matches.length) { e.preventDefault(); choose(matches[activeIndex] || matches[0]); }
+          else if (e.key === 'Escape' && open) { e.stopPropagation(); setOpen(false); }
+        }} placeholder="Type an item ID or name" autoComplete="off" />
+      {open && <div className="item-picker-options" id={listId} role="listbox">
+        {matches.length ? matches.map((item, index) => <button key={item.id} id={`${listId}-${index}`} type="button" role="option" aria-selected={item.id === value}
+          className={`item-picker-option ${index === activeIndex ? 'active' : ''}`} onMouseEnter={() => setActiveIndex(index)} onMouseDown={(e) => e.preventDefault()} onClick={() => choose(item)}>
           <span><strong>{item.id}</strong><span>{item.name}</span></span><small>{available(db, item)} available</small>
         </button>) : <div className="item-picker-empty">No matching items</div>}
       </div>}
@@ -255,7 +300,7 @@ function RecordFilters({ search, setSearch, searchLabel, status, setStatus, stat
     </Select>
   </div>);
 }
-function SalesView({ db, update, canWrite, initialOpen }) {
+function SalesView({ db, update, confirmAction, canWrite, initialOpen }) {
   const [open, setOpen] = useState(!!initialOpen); const [edit, setEdit] = useState(null);
   const [search, setSearch] = useState(""); const [statusFilter, setStatusFilter] = useState("");
   const blank = { id: "", date: today(), phone: "", customer: "", itemId: "", qty: 1, discount: 0, unitPrice: "", mode: "Cash", received: "", notes: "" };
@@ -267,13 +312,14 @@ function SalesView({ db, update, canWrite, initialOpen }) {
   const preview = { ...form, unitPrice: unit };
   const save = async () => {
     if (!form.itemId) return;
+    if (edit && !await confirmAction({ kind: 'update', title: 'Update sale?', message: `Save changes to sale ${edit}?`, confirmLabel: 'Update sale' })) return;
     const next = structuredClone(db); const row = { ...form, unitPrice: unit };
     if (edit) next.sales[next.sales.findIndex((x) => x.id === edit)] = row;
     else { row.id = nextId(next.sales, "GR-", 3); next.sales.push(row); }
     if (form.phone && !custByPhone(next, form.phone)) next.customers.push({ id: nextId(next.customers, "CUST-", 3), phone: form.phone.trim(), name: form.customer || "", email: "", address: "", notes: "Added from a sale" });
-    if (await update(next)) { setOpen(false); toast(edit ? "Sale updated" : "Sale saved"); }
+    if (await update(next)) { setOpen(false); toast(edit ? "Sale updated" : "Sale saved", edit ? 'updated' : 'success'); }
   };
-  const del = async (id) => { const next = structuredClone(db); next.sales = next.sales.filter((x) => x.id !== id); if (await update(next)) toast("Sale deleted", "error"); };
+  const del = async (id) => { if (!await confirmAction({ kind: 'delete', title: 'Delete sale?', message: `Delete sale ${id}? This removes its automatic payment entry too.`, confirmLabel: 'Delete sale' })) return; const next = structuredClone(db); next.sales = next.sales.filter((x) => x.id !== id); if (await update(next)) toast("Sale deleted", "deleted"); };
   const rows = db.sales.filter((s) => {
     const needle = search.trim().toLowerCase();
     const phoneNeedle = normalizePhone(needle);
@@ -315,7 +361,7 @@ function SalesView({ db, update, canWrite, initialOpen }) {
     </Modal>)}
   </div>);
 }
-function RentalsView({ db, update, canWrite, initialOpen }) {
+function RentalsView({ db, update, confirmAction, canWrite, initialOpen }) {
   const [open, setOpen] = useState(!!initialOpen); const [edit, setEdit] = useState(null);
   const [search, setSearch] = useState(""); const [statusFilter, setStatusFilter] = useState("");
   const blank = { id: "", bookingDate: today(), phone: "", customer: "", itemId: "", eventDate: "", pickup: "", returnDue: "", actualReturn: "", rentalFee: "", deposit: "", damage: 0, mode: "Cash", received: "", depositRefunded: 0, notes: "" };
@@ -326,15 +372,16 @@ function RentalsView({ db, update, canWrite, initialOpen }) {
   const preview = { ...form, rentalFee: form.rentalFee === "" ? (item?.rentalPrice || 0) : +form.rentalFee, deposit: form.deposit === "" ? (item?.deposit || 0) : +form.deposit };
   const save = async () => {
     if (!form.itemId) return;
+    if (edit && !await confirmAction({ kind: 'update', title: 'Update rental?', message: `Save changes to rental ${edit}?`, confirmLabel: 'Update rental' })) return;
     const next = structuredClone(db);
     const row = { ...form, rentalFee: form.rentalFee === "" ? (item?.rentalPrice || 0) : +form.rentalFee, deposit: form.deposit === "" ? (item?.deposit || 0) : +form.deposit };
     if (edit) next.rentals[next.rentals.findIndex((x) => x.id === edit)] = row;
     else { row.id = nextId(next.rentals, "WSB-", 4); next.rentals.push(row); }
     if (form.phone && !custByPhone(next, form.phone)) next.customers.push({ id: nextId(next.customers, "CUST-", 3), phone: form.phone.trim(), name: form.customer || "", email: "", address: "", notes: "Added from a rental" });
-    if (await update(next)) { setOpen(false); toast(edit ? "Rental updated" : "Rental saved"); }
+    if (await update(next)) { setOpen(false); toast(edit ? "Rental updated" : "Rental saved", edit ? 'updated' : 'success'); }
   };
-  const del = async (id) => { const next = structuredClone(db); next.rentals = next.rentals.filter((x) => x.id !== id); if (await update(next)) toast("Rental deleted", "error"); };
-  const markReturned = async (r) => { const next = structuredClone(db); next.rentals[next.rentals.findIndex((x) => x.id === r.id)] = { ...r, actualReturn: today() }; if (await update(next)) toast("Marked as returned", "info"); };
+  const del = async (id) => { if (!await confirmAction({ kind: 'delete', title: 'Delete rental?', message: `Delete rental ${id}? This removes its automatic payment entry too.`, confirmLabel: 'Delete rental' })) return; const next = structuredClone(db); next.rentals = next.rentals.filter((x) => x.id !== id); if (await update(next)) toast("Rental deleted", "deleted"); };
+  const markReturned = async (r) => { if (!await confirmAction({ kind: 'update', title: 'Mark rental returned?', message: `Mark rental ${r.id} as returned today?`, confirmLabel: 'Mark returned' })) return; const next = structuredClone(db); next.rentals[next.rentals.findIndex((x) => x.id === r.id)] = { ...r, actualReturn: today() }; if (await update(next)) toast("Marked as returned", "updated"); };
   const rows = db.rentals.filter((r) => {
     const needle = search.trim().toLowerCase();
     const phoneNeedle = normalizePhone(needle);
@@ -384,14 +431,14 @@ function RentalsView({ db, update, canWrite, initialOpen }) {
     </Modal>)}
   </div>);
 }
-function InventoryView({ db, update, canWrite }) {
+function InventoryView({ db, update, confirmAction, canWrite }) {
   const [open, setOpen] = useState(false); const [edit, setEdit] = useState(null); const [q, setQ] = useState("");
   const blank = { id: "", name: "", category: "Party wear", purchaseCost: 0, salePrice: 0, discount: 0, rentalPrice: 0, deposit: 1500, cleaning: 450, repair: 1000, status: "Available", stockQty: 1, purchaseDate: "" };
   const [form, setForm] = useState(blank);
   const openNew = () => { setEdit(null); setForm({ ...blank, id: nextId(db.inventory, "WS-", 3) }); setOpen(true); };
   const openEdit = (i) => { setEdit(i.id); setForm({ ...blank, ...i }); setOpen(true); };
-  const save = async () => { if (!form.name) return; const next = structuredClone(db); if (edit) next.inventory[next.inventory.findIndex((x) => x.id === edit)] = form; else next.inventory.push(form); if (await update(next)) { setOpen(false); toast(edit ? "Item updated" : "Item added"); } };
-  const del = async (id) => { const next = structuredClone(db); next.inventory = next.inventory.filter((x) => x.id !== id); if (await update(next)) toast("Item deleted", "error"); };
+  const save = async () => { if (!form.name) return; if (edit && !await confirmAction({ kind: 'update', title: 'Update item?', message: `Save changes to item ${edit}?`, confirmLabel: 'Update item' })) return; const next = structuredClone(db); if (edit) next.inventory[next.inventory.findIndex((x) => x.id === edit)] = form; else next.inventory.push(form); if (await update(next)) { setOpen(false); toast(edit ? "Item updated" : "Item added", edit ? 'updated' : 'success'); } };
+  const del = async (id) => { if (!await confirmAction({ kind: 'delete', title: 'Delete item?', message: `Delete item ${id}? Items used by a sale or rental cannot be removed.`, confirmLabel: 'Delete item' })) return; const next = structuredClone(db); next.inventory = next.inventory.filter((x) => x.id !== id); if (await update(next)) toast("Item deleted", "deleted"); };
   const rows = db.inventory.filter((i) => (i.name + i.id + i.category).toLowerCase().includes(q.toLowerCase()));
   const head = ["ID", "Item", "Category", "Sale price", "Discount", "Rental", "Deposit", "Stock", "Available", "Rental status", "Item status"]; if (canWrite) head.push("");
   return (<div>
@@ -435,13 +482,13 @@ function InventoryView({ db, update, canWrite }) {
     </Modal>)}
   </div>);
 }
-function CustomersView({ db, update, canWrite }) {
+function CustomersView({ db, update, confirmAction, canWrite }) {
   const [open, setOpen] = useState(false); const [edit, setEdit] = useState(null);
   const blank = { id: "", phone: "", name: "", email: "", address: "", notes: "" }; const [form, setForm] = useState(blank);
   const openNew = () => { setEdit(null); setForm(blank); setOpen(true); };
   const openEdit = (c) => { setEdit(c.id); setForm({ ...c }); setOpen(true); };
-  const save = async () => { if (!form.phone && !form.name) return; const next = structuredClone(db); if (edit) next.customers[next.customers.findIndex((x) => x.id === edit)] = form; else next.customers.push({ ...form, id: nextId(next.customers, "CUST-", 3) }); if (await update(next)) { setOpen(false); toast(edit ? "Customer updated" : "Customer saved"); } };
-  const del = async (id) => { const next = structuredClone(db); next.customers = next.customers.filter((x) => x.id !== id); if (await update(next)) toast("Customer deleted", "error"); };
+  const save = async () => { if (!form.phone && !form.name) return; if (edit && !await confirmAction({ kind: 'update', title: 'Update customer?', message: `Save changes to customer ${edit}?`, confirmLabel: 'Update customer' })) return; const next = structuredClone(db); if (edit) next.customers[next.customers.findIndex((x) => x.id === edit)] = form; else next.customers.push({ ...form, id: nextId(next.customers, "CUST-", 3) }); if (await update(next)) { setOpen(false); toast(edit ? "Customer updated" : "Customer saved", edit ? 'updated' : 'success'); } };
+  const del = async (id) => { if (!await confirmAction({ kind: 'delete', title: 'Delete customer?', message: `Delete customer ${id}?`, confirmLabel: 'Delete customer' })) return; const next = structuredClone(db); next.customers = next.customers.filter((x) => x.id !== id); if (await update(next)) toast("Customer deleted", "deleted"); };
   const head = ["ID", "Name", "Phone", "Email", "Orders", "Billed", "Outstanding"]; if (canWrite) head.push("");
   return (<div>
     <SectionHead title="Customers" readonly={!canWrite} subtitle="Everyone you've served. New customers are added here the moment you enter them on a sale or rental."
@@ -465,13 +512,13 @@ function CustomersView({ db, update, canWrite }) {
     </Modal>)}
   </div>);
 }
-function TransactionsView({ db, update, canWrite }) {
+function TransactionsView({ db, update, confirmAction, canWrite }) {
   const [open, setOpen] = useState(false);
   const [dateFilter, setDateFilter] = useState("");
   const blank = { id: "", date: today(), type: "Expense", category: "Rent", desc: "", party: "", mode: "Cash", account: "", amount: "", notes: "" };
   const [form, setForm] = useState(blank);
   const save = async () => { if (!form.amount) return; const next = structuredClone(db); next.transactions.push({ ...form, id: nextId(next.transactions, "TX-", 1) }); if (await update(next)) { setOpen(false); setForm(blank); toast("Transaction saved"); } };
-  const del = async (id) => { const next = structuredClone(db); next.transactions = next.transactions.filter((x) => x.id !== id); if (await update(next)) toast("Transaction deleted", "error"); };
+  const del = async (id) => { if (!await confirmAction({ kind: 'delete', title: 'Delete transaction?', message: `Delete transaction ${id}?`, confirmLabel: 'Delete transaction' })) return; const next = structuredClone(db); next.transactions = next.transactions.filter((x) => x.id !== id); if (await update(next)) toast("Transaction deleted", "deleted"); };
   const allRows = allTx(db).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
   const rows = allRows.filter((t) => !dateFilter || String(t.date || "").slice(0, 10) === dateFilter);
   const summaryRows = dateFilter ? rows : allRows;
@@ -511,11 +558,11 @@ function TransactionsView({ db, update, canWrite }) {
     </Modal>)}
   </div>);
 }
-function SettingsView({ db, update, me, onSignOut, canWrite }) {
+function SettingsView({ db, update, confirmAction, me, onSignOut, canWrite }) {
   const [fee, setFee] = useState(db.settings.lateFeePerDay);
   const [pw, setPw] = useState({ current: "", next: "" }); const [msg, setMsg] = useState("");
-  const changePw = async () => { setMsg(""); try { await api("/change-password", { method: "POST", body: pw }); toast("Password changed"); setTimeout(() => window.dispatchEvent(new Event("wabi-signed-out")), 1500); setPw({ current: "", next: "" }); } catch (e) { setMsg(e.message); } };
-  const saveSettings = async () => { const next = structuredClone(db); next.settings.lateFeePerDay = +fee || 0; if (await update(next)) toast("Settings saved"); };
+  const changePw = async () => { setMsg(""); if (!await confirmAction({ kind: 'update', title: 'Change password?', message: 'Change your password and sign out of all sessions?', confirmLabel: 'Change password' })) return; const savingToast = toast('Updating password…', 'saving', true); try { await api("/change-password", { method: "POST", body: pw }); toast("Password changed", "updated"); setTimeout(() => window.dispatchEvent(new Event("wabi-signed-out")), 1500); setPw({ current: "", next: "" }); } catch (e) { setMsg(e.message); } finally { dismissToast(savingToast); } };
+  const saveSettings = async () => { if (!await confirmAction({ kind: 'update', title: 'Update settings?', message: 'Save the new late fee amount?', confirmLabel: 'Update settings' })) return; const next = structuredClone(db); next.settings.lateFeePerDay = +fee || 0; if (await update(next)) toast("Settings saved", "updated"); };
   return (<div style={{ maxWidth: 560 }}>
     <SectionHead title="Settings" subtitle={`Signed in as ${me?.name || me?.username} · ${me?.role === "admin" ? "Admin" : "Staff"}.`} />
     <AppearanceSettings />
@@ -551,28 +598,40 @@ function accessSummary(u) {
   if (r.length) parts.push(r.join(", ") + " (view)");
   return parts.join(" · ") || "No pages";
 }
-function UsersView({ me }) {
+function UsersView({ me, confirmAction }) {
   const [users, setUsers] = useState(null);
   const [open, setOpen] = useState(false); const [edit, setEdit] = useState(null); const [err, setErr] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [busy, setBusy] = useState(false);
   const blank = { username: "", email: "", name: "", password: "", role: "staff", permissions: defaultNewPerms() };
   const [form, setForm] = useState(blank);
-  const load = async () => { const { data } = await api("/users"); setUsers(data); };
+  const load = async () => {
+    try { const { data } = await api("/users"); setUsers(data); setLoadError(""); }
+    catch (error) { setLoadError(error.message || "Could not load users."); }
+  };
   useEffect(() => { load(); }, []);
   const openNew = () => { setEdit(null); setForm(blank); setErr(""); setOpen(true); };
   const openEdit = (u) => { setEdit(u.username); setForm({ username: u.username, email: u.email, name: u.name, password: "", role: u.role, permissions: { ...defaultNewPerms(), ...u.permissions } }); setErr(""); setOpen(true); };
   const save = async () => {
+    if (busy) return;
+    if (edit && !await confirmAction({ kind: 'update', title: 'Update user?', message: `Save changes to ${form.name || edit}?`, confirmLabel: 'Update user' })) return;
     setErr("");
+    setBusy(true);
+    const savingToast = toast(edit ? 'Updating user…' : 'Creating user…', 'saving', true);
     try {
       if (edit) await api("/users/" + encodeURIComponent(edit), { method: "PUT", body: { name: form.name, role: form.role, permissions: form.permissions, password: form.password || undefined } });
       else await api("/users", { method: "POST", body: form });
-      await load(); setOpen(false); toast(edit ? "User updated" : "User added");
+      await load(); setOpen(false); toast(edit ? "User updated" : "User added", edit ? 'updated' : 'success');
     } catch (e) { setErr(e.message); }
+    finally { setBusy(false); dismissToast(savingToast); }
   };
-  const del = async (u) => { if (!confirm(`Remove ${u.name || u.username}?`)) return; try { await api("/users/" + encodeURIComponent(u.username), { method: "DELETE" }); load(); toast("User removed", "error"); } catch (e) { alert(e.message); } };
+  const del = async (u) => { if (!await confirmAction({ kind: 'delete', title: 'Delete user?', message: `Remove access for ${u.name || u.username}?`, confirmLabel: 'Delete user' })) return; try { await api("/users/" + encodeURIComponent(u.username), { method: "DELETE" }); await load(); toast("User removed", "deleted"); } catch (e) { toast(e.message, 'error'); } };
+  if (!users && loadError) return <div className="panel" role="alert"><p>{loadError}</p><Btn onClick={load}>Retry</Btn></div>;
   if (!users) return <div className="section-loader"><div className="loader-ring" /><span>Loading users…</span></div>;
   return (<div>
     <SectionHead title="Users & access" subtitle="Add staff logins and choose what each person can see. New staff can use Sales and Rentals by default; give them more only if needed."
       action={<Btn kind="gold" onClick={openNew}><Plus size={16} /> Add user</Btn>} />
+    {loadError && <div className="panel" role="alert"><p>{loadError}</p><Btn onClick={load}>Retry</Btn></div>}
     <TableWrap head={["Name", "Username", "Role", "Access", ""]}>
       {users.map((u) => (<tr key={u.username}>
         <Td>{u.name}</Td><Td>{u.username}</Td>
@@ -607,7 +666,7 @@ function UsersView({ me }) {
       </div>)}
       {form.role === "admin" && <p style={{ color: C.muted, fontSize: 13 }}>Admins can see and edit every page, including this Users page.</p>}
       {err && <div style={{ color: C.red, fontSize: 13, marginTop: 10 }}>{err}</div>}
-      <div className="flex justify-end gap-2 mt-3"><Btn kind="ghost" onClick={() => setOpen(false)}>Cancel</Btn><Btn onClick={save}><Check size={16} /> {edit ? "Save changes" : "Create user"}</Btn></div>
+      <div className="flex justify-end gap-2 mt-3"><Btn kind="ghost" onClick={() => setOpen(false)}>Cancel</Btn><Btn onClick={save} disabled={busy}><Check size={16} /> {busy ? "Saving…" : edit ? "Save changes" : "Create user"}</Btn></div>
     </Modal>)}
   </div>);
 }
@@ -651,7 +710,15 @@ function Shell() {
   const saving = useRef(false);
   const [sync, setSync] = useState("idle");
   const [loadError, setLoadError] = useState("");
-  const clearSession = () => { setAuthed(false); setMe(null); setDb(null); setTab(null); setLoadError(''); baseline.current = null; window.dispatchEvent(new CustomEvent('wabi-user', { detail: null })); };
+  const [confirmation, setConfirmation] = useState(null);
+  const confirmationResolver = useRef(null);
+  const confirmAction = action => new Promise(resolve => {
+    if (confirmationResolver.current) return resolve(false);
+    confirmationResolver.current = resolve;
+    setConfirmation(action);
+  });
+  const resolveConfirmation = accepted => { setConfirmation(null); confirmationResolver.current?.(accepted); confirmationResolver.current = null; };
+  const clearSession = () => { resolveConfirmation(false); setAuthed(false); setMe(null); setDb(null); setTab(null); setLoadError(''); baseline.current = null; window.dispatchEvent(new CustomEvent('wabi-user', { detail: null })); };
   useEffect(() => {
     window.addEventListener('wabi-signed-out', clearSession);
     return () => window.removeEventListener('wabi-signed-out', clearSession);
@@ -698,17 +765,17 @@ function Shell() {
   const update = async (next) => {
     if (saving.current) return false;
     saving.current = true; setSync("saving");
-    const savingToast = toast("Saving…", "loading", true);
+    const savingToast = toast("Saving…", "saving", true);
     try {
       const baseData = structuredClone(baseline.current || db);
       const { status, data } = await api("/data", { method: "PUT", body: { data: next, baseData, baseVersion: version.current } });
-      if (status === 409) { version.current = data.serverVersion; baseline.current = structuredClone(data.server.data); setDb(data.server.data); setSync("error"); alert("Someone changed the same record while you were editing. The latest data was reloaded; please review and save again."); return false; }
+      if (status === 409) { version.current = data.serverVersion; baseline.current = structuredClone(data.server.data); setDb(data.server.data); setSync("error"); toast("Another person changed this record. The latest data was loaded; review it and save again.", "error", false, 6000); return false; }
       version.current = data.version; baseline.current = structuredClone(data.data); setDb(data.data); setSync("saved"); setTimeout(() => setSync("idle"), 1200);
       return true;
-    } catch (error) { setSync("error"); alert(error.message || 'Could not save. Please try again.'); return false; }
+    } catch (error) { setSync("error"); toast(error.message || 'Could not save. Please try again.', "error", false, 6000); return false; }
     finally { saving.current = false; dismissToast(savingToast); }
   };
-  const signOut = async () => { try { await api('/logout', { method: 'POST', body: {} }); clearSession(); } catch (error) { alert(error.message); } };
+  const signOut = async () => { try { await api('/logout', { method: 'POST', body: {} }); clearSession(); } catch (error) { toast(error.message, 'error'); } };
 
   if (!authed) return <>{fontsLink}<Login onLogin={(u) => { setLoadError(''); setMe(u); setAuthed(true); window.dispatchEvent(new CustomEvent('wabi-user', { detail: u })); }} /></>;
   if (loadError) return <div className="p-8" role="alert">Could not load your shop: {loadError} <Btn onClick={() => location.reload()}>Retry</Btn></div>;
@@ -743,9 +810,10 @@ function Shell() {
       <header className="topbar"><div className="breadcrumb"><span>Workspace</span><ChevronRight size={14} /><strong>{tab}</strong></div><div className="topbar-actions"><SyncBadge /><span className="today-label">{new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}</span><ThemeToggle /><span className="avatar small-avatar">{(me.name || me.username).slice(0, 1).toUpperCase()}</span><button className="mobile-signout" onClick={signOut} aria-label="Sign out"><LogOut size={17} /></button></div></header>
       <nav className="mobile-nav" aria-label="Mobile navigation">{nav.map(n => <NavBtn key={n} name={n} />)}</nav>
       <main>
-        <View key={tab} db={db} update={update} me={me} onSignOut={signOut} canWrite={canWrite(tab)} initialOpen={initialOpen} onNavigate={navigate} canAccess={allowed} canCreate={canWrite} onNotify={toast} metrics={{ today, monthOf, allTx, inr, saleBalance, rentalCharges, rentalDeposit, available, saleTotal, itemById, rentalStatus }} />
+        <View key={tab} db={db} update={update} confirmAction={confirmAction} me={me} onSignOut={signOut} canWrite={canWrite(tab)} initialOpen={initialOpen} onNavigate={navigate} canAccess={allowed} canCreate={canWrite} onNotify={toast} metrics={{ today, monthOf, allTx, inr, saleBalance, rentalCharges, rentalDeposit, available, saleTotal, itemById, rentalStatus }} />
       </main>
     </div>
+    {confirmation && <ConfirmDialog action={confirmation} onResolve={resolveConfirmation} />}
   </div>);
 }
 

@@ -182,7 +182,9 @@ test('browser: sales, customer reuse, ledger, rentals, return, persistence, and 
     await page.getByLabel('Phone', { exact: true }).fill('9876543210');
     await expect(page.getByLabel('Customer name')).toHaveValue('Test Customer');
     await page.getByLabel('Item', { exact: true }).fill('WS-001');
-    await page.getByRole('option', { name: /WS-001 Test outfit 1/ }).click();
+    await page.getByLabel('Item', { exact: true }).press('ArrowDown');
+    await page.getByLabel('Item', { exact: true }).press('Enter');
+    await expect(page.getByLabel('Item', { exact: true })).toHaveValue(/WS-001/);
     await expect(page.getByLabel('Unit price')).toHaveValue('16400');
     await expect(page.getByLabel('Unit price')).toHaveAttribute('readonly', '');
     await expect(page.getByLabel('Discount %')).toHaveAttribute('readonly', '');
@@ -205,8 +207,19 @@ test('browser: sales, customer reuse, ledger, rentals, return, persistence, and 
     const soldItem = page.locator('tbody tr').filter({ hasText: 'WS-001' });
     await expect(soldItem).toContainText('Unavailable');
     await soldItem.getByRole('button', { name: 'Edit record' }).click();
+    const editDialog = page.getByRole('dialog', { name: 'Edit item' });
+    await expect.poll(() => editDialog.evaluate(el => {
+      const rect = el.getBoundingClientRect();
+      return Math.abs((rect.top + rect.bottom) / 2 - innerHeight / 2);
+    })).toBeLessThan(2);
+    assert.match(await editDialog.evaluate(el => getComputedStyle(el.parentElement).backdropFilter), /blur\(/);
     await page.getByLabel('Discount %').fill('12');
     await page.getByRole('button', { name: 'Save item', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'Update item?' })).toBeVisible();
+    await page.getByRole('dialog', { name: 'Update item?' }).getByRole('button', { name: 'Cancel' }).click();
+    await expect(page.getByRole('dialog', { name: 'Edit item' })).toBeVisible();
+    await page.getByRole('button', { name: 'Save item', exact: true }).click();
+    await page.getByRole('dialog', { name: 'Update item?' }).getByRole('button', { name: 'Update item' }).click();
     await expect(page.locator('tbody tr').filter({ hasText: 'WS-001' })).toContainText('12%');
     await page.getByRole('button', { name: 'Transactions', exact: true }).click();
     await expect(page.getByText('Sale GR-001', { exact: true })).toBeVisible();
@@ -264,6 +277,7 @@ test('browser: sales, customer reuse, ledger, rentals, return, persistence, and 
     await page.getByLabel('Filter rentals by status').selectOption('');
     await rentalSearch.fill('');
     await page.getByTitle('Mark returned').click();
+    await page.getByRole('dialog', { name: 'Mark rental returned?' }).getByRole('button', { name: 'Mark returned' }).click();
     await expect(page.getByRole('table').getByText('Returned', { exact: true })).toBeVisible();
     await page.reload();
     await expect(page.getByRole('heading', { name: 'Dashboard', exact: true })).toBeVisible();
@@ -287,7 +301,9 @@ test('browser: sales, customer reuse, ledger, rentals, return, persistence, and 
     await page.getByRole('button', { name: 'New sale', exact: true }).click();
     await expect(page.getByRole('dialog', { name: 'New sale', exact: true })).toBeVisible();
     await page.getByLabel('Customer name').fill('Unsaved customer');
-    await page.getByRole('button', { name: 'Close', exact: true }).click();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'New sale', exact: true })).toBeFocused();
     for (const name of ['Sales', 'Rentals', 'Inventory', 'Customers', 'Transactions', 'Settings', 'Users']) {
       await page.getByRole('button', { name, exact: true }).click();
       await expect(page.getByRole('heading', { name: name === 'Users' ? 'Users & access' : name, exact: true })).toBeVisible();
@@ -305,6 +321,18 @@ test('browser: sales, customer reuse, ledger, rentals, return, persistence, and 
     await page.screenshot({ path: path.join(root, 'test-results/dashboard-mobile.png'), fullPage: true });
     await page.getByRole('button', { name: 'Switch to light mode' }).click();
     await page.screenshot({ path: path.join(root, 'test-results/dashboard-mobile-light.png'), fullPage: true });
+    await page.setViewportSize({ width: 320, height: 800 });
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Dashboard must not overflow a 320px screen');
+    await page.getByRole('button', { name: 'Sales', exact: true }).click();
+    const saleToDelete = page.getByRole('row').filter({ hasText: 'GR-001' });
+    await saleToDelete.getByRole('button', { name: 'Delete record' }).click();
+    await expect(page.getByRole('dialog', { name: 'Delete sale?' })).toBeVisible();
+    await page.getByRole('dialog', { name: 'Delete sale?' }).getByRole('button', { name: 'Cancel' }).click();
+    await expect(saleToDelete).toBeVisible();
+    await saleToDelete.getByRole('button', { name: 'Delete record' }).click();
+    await page.getByRole('dialog', { name: 'Delete sale?' }).getByRole('button', { name: 'Delete sale' }).click();
+    await expect(saleToDelete).toHaveCount(0);
+    await expect(page.locator('.toast-deleted')).toContainText('Sale deleted');
     assert.deepEqual(errors, []);
   } finally { await browser.close(); }
 });
