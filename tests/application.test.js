@@ -51,21 +51,52 @@ test('authentication, seeded data, permissions, validation, conflicts, and revok
   attempted.settings.lateFeePerDay = 1;
   attempted.inventory[0].salePrice = 1;
   attempted.customers = [];
-  const saved = await request('/data', 'PUT', { data: attempted, baseVersion: original.version }, staff);
+  attempted.sales.push({ id: 'GR-STAFF-001', itemId: 'WS-002', qty: 1, unitPrice: 100, received: 100 });
+  const saved = await request('/data', 'PUT', { data: attempted, baseData: original.data, baseVersion: original.version }, staff);
   assert.equal(saved.status, 200);
   assert.equal(saved.data.data.settings.lateFeePerDay, 1000);
   assert.equal(saved.data.data.inventory[0].salePrice, original.data.inventory[0].salePrice);
+  assert.equal(saved.data.data.sales.some(sale => sale.id === 'GR-STAFF-001'), true);
   assert.equal(saved.data.data.customers.length, 1);
-  assert.equal((await request('/data', 'PUT', { data: original.data, baseVersion: original.version })).status, 409);
-  const bad = structuredClone(saved.data.data);
+  const adminEdit = structuredClone(original.data);
+  adminEdit.inventory[0].salePrice += 50;
+  const mergedSave = await request('/data', 'PUT', { data: adminEdit, baseData: original.data, baseVersion: original.version });
+  assert.equal(mergedSave.status, 200);
+  assert.equal(mergedSave.data.data.inventory[0].salePrice, original.data.inventory[0].salePrice + 50);
+  assert.equal(mergedSave.data.data.sales.some(sale => sale.id === 'GR-STAFF-001'), true);
+  const conflictingEdit = structuredClone(original.data);
+  conflictingEdit.inventory[0].salePrice += 100;
+  const conflict = await request('/data', 'PUT', { data: conflictingEdit, baseData: original.data, baseVersion: original.version });
+  assert.equal(conflict.status, 409);
+  assert.deepEqual(conflict.data.conflicts, ['inventory.WS-001.salePrice']);
+  const staffSnapshot = (await request('/data', 'GET', undefined, staff)).data;
+  const adminConcurrentEdit = structuredClone(mergedSave.data.data);
+  adminConcurrentEdit.settings.lateFeePerDay = 1200;
+  const staffConcurrentEdit = structuredClone(staffSnapshot.data);
+  staffConcurrentEdit.sales.push({ id: 'GR-STAFF-002', itemId: 'WS-003', qty: 1, unitPrice: 100, received: 100 });
+  const [adminConcurrentSave, staffConcurrentSave] = await Promise.all([
+    request('/data', 'PUT', { data: adminConcurrentEdit, baseData: mergedSave.data.data, baseVersion: mergedSave.data.version }),
+    request('/data', 'PUT', { data: staffConcurrentEdit, baseData: staffSnapshot.data, baseVersion: staffSnapshot.version }, staff),
+  ]);
+  assert.equal(adminConcurrentSave.status, 200);
+  assert.equal(staffConcurrentSave.status, 200);
+  const latest = (await request('/data')).data;
+  assert.equal(latest.data.settings.lateFeePerDay, 1200);
+  assert.equal(latest.data.sales.some(sale => sale.id === 'GR-STAFF-002'), true);
+  assert.equal((await request('/me')).status, 200);
+  assert.equal((await request('/me', 'GET', undefined, staff)).status, 200);
+  const bad = structuredClone(latest.data);
   bad.sales.push({ id: 'GR-001', itemId: 'WS-001', qty: 2, unitPrice: 100, received: 100 });
-  assert.equal((await request('/data', 'PUT', { data: bad, baseVersion: saved.data.version })).status, 400);
-  const badDiscount = structuredClone(saved.data.data);
+  assert.equal((await request('/data', 'PUT', { data: bad, baseData: latest.data, baseVersion: latest.version })).status, 400);
+  const badDiscount = structuredClone(latest.data);
   badDiscount.inventory[0].discount = 101;
-  assert.equal((await request('/data', 'PUT', { data: badDiscount, baseVersion: saved.data.version })).status, 400);
+  assert.equal((await request('/data', 'PUT', { data: badDiscount, baseData: latest.data, baseVersion: latest.version })).status, 400);
   assert.equal((await request('/data', 'PUT', { data: original.data })).status, 400);
   assert.equal((await request('/users/teststaff', 'DELETE')).status, 200);
   assert.equal((await request('/data', 'GET', undefined, staff)).status, 401);
+  const afterConcurrency = (await request('/data')).data;
+  const restored = await request('/data', 'PUT', { data: original.data, baseData: afterConcurrency.data, baseVersion: afterConcurrency.version });
+  assert.equal(restored.status, 200);
 });
 
 test('session cookies, logout, account preferences, live permissions, password changes and CSRF', async () => {

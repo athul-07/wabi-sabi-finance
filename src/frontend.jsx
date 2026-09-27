@@ -594,10 +594,11 @@ function Shell() {
   const [initialOpen, setInitialOpen] = useState(false);
   const navigate = (page, create = false) => { setInitialOpen(create); setTab(page); };
   const version = useRef(0);
+  const baseline = useRef(null);
   const saving = useRef(false);
   const [sync, setSync] = useState("idle");
   const [loadError, setLoadError] = useState("");
-  const clearSession = () => { setAuthed(false); setMe(null); setDb(null); setTab(null); setLoadError(''); window.dispatchEvent(new CustomEvent('wabi-user', { detail: null })); };
+  const clearSession = () => { setAuthed(false); setMe(null); setDb(null); setTab(null); setLoadError(''); baseline.current = null; window.dispatchEvent(new CustomEvent('wabi-user', { detail: null })); };
   useEffect(() => {
     window.addEventListener('wabi-signed-out', clearSession);
     return () => window.removeEventListener('wabi-signed-out', clearSession);
@@ -607,6 +608,7 @@ function Shell() {
     const { data } = await api('/data');
     if (!data.data) throw new Error('Shop data is missing in Supabase.');
     version.current = data.version;
+    baseline.current = structuredClone(data.data);
     setDb(data.data);
   };
   useEffect(() => {
@@ -626,7 +628,7 @@ function Shell() {
         setMe(profile.user);
         const { data } = await api('/data');
         if (!saving.current && version.current === previousVersion && data.version >= previousVersion) {
-          version.current = data.version; setDb(data.data);
+          version.current = data.version; baseline.current = structuredClone(data.data); setDb(data.data);
         }
       } catch { /* Keep the last loaded data available during a temporary outage. */ }
     }, 5000);
@@ -644,9 +646,10 @@ function Shell() {
     if (saving.current) return false;
     saving.current = true; setSync("saving");
     try {
-      const { status, data } = await api("/data", { method: "PUT", body: { data: next, baseVersion: version.current } });
-      if (status === 409) { version.current = data.serverVersion; setDb(data.server.data); setSync("error"); alert("Another device saved a change first, so the latest version was reloaded. Review your entry and save again."); return false; }
-      version.current = data.version; setDb(data.data); setSync("saved"); setTimeout(() => setSync("idle"), 1200);
+      const baseData = structuredClone(baseline.current || db);
+      const { status, data } = await api("/data", { method: "PUT", body: { data: next, baseData, baseVersion: version.current } });
+      if (status === 409) { version.current = data.serverVersion; baseline.current = structuredClone(data.server.data); setDb(data.server.data); setSync("error"); alert("Someone changed the same record while you were editing. The latest data was reloaded; please review and save again."); return false; }
+      version.current = data.version; baseline.current = structuredClone(data.data); setDb(data.data); setSync("saved"); setTimeout(() => setSync("idle"), 1200);
       return true;
     } catch (error) { setSync("error"); alert(error.message || 'Could not save. Please try again.'); return false; }
     finally { saving.current = false; }

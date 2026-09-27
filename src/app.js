@@ -1,6 +1,7 @@
 const express = require('express');
 const path = require('node:path');
 const provisionUser = require('./provision-user');
+const mergeShopData = require('./merge-shop');
 const { DEFAULT_STAFF_PERMS, cleanPerms, parsePerms, publicUser, visibleRecord } = require('./permissions');
 const asyncRoute = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
@@ -127,40 +128,49 @@ function createApp({ db, authClient }) {
   // Writes are filtered by the signed-in user's live permissions, so a page they
   // can't write to is never changed even if the request contains it.
   app.put("/api/data", auth, asyncRoute(async (req, res) => {
-    const { data, baseVersion } = req.body || {};
-    if (!data || typeof data !== 'object' || Array.isArray(data)) return res.status(400).json({ error: "No data provided." });
-    const cur = (await db.getShop()) || { version: 0, data: {} };
+    const { data: submittedData, baseData, baseVersion } = req.body || {};
+    if (!submittedData || typeof submittedData !== 'object' || Array.isArray(submittedData)) return res.status(400).json({ error: "No data provided." });
     if (!Number.isInteger(baseVersion)) return res.status(400).json({ error: "A base version is required." });
-    if (baseVersion !== cur.version)
-      return res.status(409).json({ error: "conflict", serverVersion: cur.version, server: visibleRecord(cur, req.user) });
-
     const u = req.user;
     const isAdmin = u.role === "admin";
     const perms = parsePerms(u);
     const canWrite = (page) => isAdmin || perms[page] === "write";
-    const curData = cur.data || {};
-    const merged = Object.fromEntries(['inventory', 'sales', 'rentals', 'transactions', 'settings', 'customers'].map((key) => [key, data[key] ?? curData[key]]));
-    if (!canWrite("Inventory")) merged.inventory = curData.inventory;
-    if (!canWrite("Sales")) merged.sales = curData.sales;
-    if (!canWrite("Rentals")) merged.rentals = curData.rentals;
-    if (!canWrite("Transactions")) merged.transactions = curData.transactions;
-    if (!canWrite("Settings")) merged.settings = curData.settings;
-    // adding customers is part of the sales/rentals flow, so allow it for those writers too
-    if (!(canWrite("Customers") || canWrite("Sales") || canWrite("Rentals"))) merged.customers = curData.customers;
+    const conflict = (latest, conflicts) => res.status(409).json({
+      error: "conflict", serverVersion: latest?.version,
+      server: visibleRecord(latest, req.user), ...(conflicts?.length ? { conflicts } : {}),
+    });
 
-    if (!canWrite('Customers') && (canWrite('Sales') || canWrite('Rentals'))) {
-      if (!Array.isArray(merged.customers)) return res.status(400).json({ error: 'Invalid customers.' });
-      merged.customers = [...curData.customers, ...merged.customers.filter(c => c && !curData.customers.some(old => old.id === c.id || old.phone === c.phone))];
-    }
-    try { require('./validate-data')(merged); }
-    catch (error) { return res.status(400).json({ error: error.message }); }
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const cur = (await db.getShop()) || { version: 0, data: {} };
+      const curData = cur.data || {};
+      let data = submittedData;
+      if (baseVersion !== cur.version) {
+        if (!baseData || typeof baseData !== 'object' || Array.isArray(baseData)) return conflict(cur);
+        const rebased = mergeShopData(baseData, submittedData, curData);
+        if (rebased.conflicts.length) return conflict(cur, rebased.conflicts);
+        data = rebased.data;
+      }
 
-    const rec = { data: merged, version: (cur.version || 0) + 1, updatedAt: new Date().toISOString(), updatedBy: req.user.username };
-    if (!await db.compareAndSetShop(rec, baseVersion)) {
-      const latest = await db.getShop();
-      return res.status(409).json({ error: "conflict", serverVersion: latest?.version, server: visibleRecord(latest, req.user) });
+      const merged = Object.fromEntries(['inventory', 'sales', 'rentals', 'transactions', 'settings', 'customers'].map((key) => [key, data[key] ?? curData[key]]));
+      if (!canWrite("Inventory")) merged.inventory = curData.inventory;
+      if (!canWrite("Sales")) merged.sales = curData.sales;
+      if (!canWrite("Rentals")) merged.rentals = curData.rentals;
+      if (!canWrite("Transactions")) merged.transactions = curData.transactions;
+      if (!canWrite("Settings")) merged.settings = curData.settings;
+      // adding customers is part of the sales/rentals flow, so allow it for those writers too
+      if (!(canWrite("Customers") || canWrite("Sales") || canWrite("Rentals"))) merged.customers = curData.customers;
+
+      if (!canWrite('Customers') && (canWrite('Sales') || canWrite('Rentals'))) {
+        if (!Array.isArray(merged.customers)) return res.status(400).json({ error: 'Invalid customers.' });
+        merged.customers = [...curData.customers, ...merged.customers.filter(c => c && !curData.customers.some(old => old.id === c.id || old.phone === c.phone))];
+      }
+      try { require('./validate-data')(merged); }
+      catch (error) { return res.status(400).json({ error: error.message }); }
+
+      const rec = { data: merged, version: (cur.version || 0) + 1, updatedAt: new Date().toISOString(), updatedBy: req.user.username };
+      if (await db.compareAndSetShop(rec, cur.version)) return res.json(visibleRecord(rec, req.user));
     }
-    res.json(visibleRecord(rec, req.user));
+    return conflict(await db.getShop());
   }));
 
   app.get('/api/health', asyncRoute(async (req, res) => {
