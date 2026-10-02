@@ -40,6 +40,7 @@ create table if not exists public.wabi_inventory (
   sale_price numeric not null default 0,
   discount numeric not null default 0,
   rental_price numeric not null default 0,
+  rental_discount numeric not null default 0,
   purchase_cost numeric not null default 0,
   deposit numeric not null default 0,
   cleaning numeric not null default 0,
@@ -61,6 +62,7 @@ create table if not exists public.wabi_customers (
 );
 alter table public.wabi_inventory add column if not exists position integer not null default 0;
 alter table public.wabi_inventory add column if not exists discount numeric not null default 0;
+alter table public.wabi_inventory add column if not exists rental_discount numeric not null default 0;
 alter table public.wabi_customers add column if not exists position integer not null default 0;
 create table if not exists public.wabi_sales (
   id text primary key,
@@ -89,6 +91,7 @@ create table if not exists public.wabi_rentals (
   return_due text not null default '',
   actual_return text not null default '',
   rental_fee numeric not null default 0,
+  discount numeric not null default 0,
   deposit numeric not null default 0,
   damage numeric not null default 0,
   mode text not null default 'Cash',
@@ -154,6 +157,7 @@ alter table public.wabi_rentals add column if not exists pickup text not null de
 alter table public.wabi_rentals add column if not exists return_due text not null default '';
 alter table public.wabi_rentals add column if not exists actual_return text not null default '';
 alter table public.wabi_rentals add column if not exists rental_fee numeric not null default 0;
+alter table public.wabi_rentals add column if not exists discount numeric not null default 0;
 alter table public.wabi_rentals add column if not exists deposit numeric not null default 0;
 alter table public.wabi_rentals add column if not exists damage numeric not null default 0;
 alter table public.wabi_rentals add column if not exists mode text not null default 'Cash';
@@ -190,14 +194,15 @@ begin
 
   if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'wabi_rentals' and column_name = 'payload') then
     if exists (select 1 from public.wabi_rentals where jsonb_typeof(payload) is distinct from 'object'
-      or exists (select 1 from jsonb_object_keys(payload) as keys(key) where key not in ('id','bookingDate','phone','customer','itemId','eventDate','pickup','returnDue','actualReturn','rentalFee','deposit','damage','mode','received','depositRefunded','notes'))) then
+      or exists (select 1 from jsonb_object_keys(payload) as keys(key) where key not in ('id','bookingDate','phone','customer','itemId','eventDate','pickup','returnDue','actualReturn','rentalFee','discount','deposit','damage','mode','received','depositRefunded','notes'))) then
       raise exception 'wabi_rentals has unrecognized payload data; preserving JSON and aborting column migration.';
     end if;
     update public.wabi_rentals set booking_date = coalesce(payload->>'bookingDate', booking_date), phone = coalesce(payload->>'phone', phone),
       customer = coalesce(payload->>'customer', customer), item_id = coalesce(payload->>'itemId', item_id),
       event_date = coalesce(payload->>'eventDate', event_date), pickup = coalesce(payload->>'pickup', pickup),
       return_due = coalesce(payload->>'returnDue', return_due), actual_return = coalesce(payload->>'actualReturn', actual_return),
-      rental_fee = coalesce(nullif(payload->>'rentalFee', '')::numeric, rental_fee), deposit = coalesce(nullif(payload->>'deposit', '')::numeric, deposit),
+      rental_fee = coalesce(nullif(payload->>'rentalFee', '')::numeric, rental_fee),
+      discount = coalesce(nullif(payload->>'discount', '')::numeric, discount), deposit = coalesce(nullif(payload->>'deposit', '')::numeric, deposit),
       damage = coalesce(nullif(payload->>'damage', '')::numeric, damage), mode = coalesce(payload->>'mode', mode),
       received = coalesce(nullif(payload->>'received', '')::numeric, received),
       deposit_refunded = coalesce(nullif(payload->>'depositRefunded', '')::numeric, deposit_refunded), notes = coalesce(payload->>'notes', notes);
@@ -271,7 +276,7 @@ begin
         union all
         select 1 from jsonb_array_elements(coalesce(shop #> '{data,rentals}', '[]')) as records(value),
           lateral jsonb_object_keys(value) as keys(key)
-        where key not in ('id','bookingDate','phone','customer','itemId','eventDate','pickup','returnDue','actualReturn','rentalFee','deposit','damage','mode','received','depositRefunded','notes')
+        where key not in ('id','bookingDate','phone','customer','itemId','eventDate','pickup','returnDue','actualReturn','rentalFee','discount','deposit','damage','mode','received','depositRefunded','notes')
         union all
         select 1 from jsonb_array_elements(coalesce(shop #> '{data,transactions}', '[]')) as records(value),
           lateral jsonb_object_keys(value) as keys(key)
@@ -289,12 +294,12 @@ begin
       on conflict (singleton) do nothing;
 
       insert into public.wabi_inventory
-        (id, position, name, category, status, stock_qty, sale_price, discount, rental_price,
+        (id, position, name, category, status, stock_qty, sale_price, discount, rental_price, rental_discount,
           purchase_cost, deposit, cleaning, repair, purchase_date, item, is_active)
       select item->>'id', ordinality::integer - 1, coalesce(item->>'name', ''), item->>'category',
         coalesce(item->>'status', 'Available'), coalesce(nullif(item->>'stockQty', '')::integer, 1),
         coalesce(nullif(item->>'salePrice', '')::numeric, 0), coalesce(nullif(item->>'discount', '')::numeric, 0),
-        coalesce(nullif(item->>'rentalPrice', '')::numeric, 0),
+        coalesce(nullif(item->>'rentalPrice', '')::numeric, 0), coalesce(nullif(item->>'rentalDiscount', '')::numeric, 0),
         coalesce(nullif(item->>'purchaseCost', '')::numeric, 0), coalesce(nullif(item->>'deposit', '')::numeric, 0),
         coalesce(nullif(item->>'cleaning', '')::numeric, 0), coalesce(nullif(item->>'repair', '')::numeric, 0),
         coalesce(item->>'purchaseDate', ''), item, true
@@ -302,7 +307,7 @@ begin
       where nullif(item->>'id', '') is not null
       on conflict (id) do update set position = excluded.position, name = excluded.name,
         category = excluded.category, status = excluded.status, stock_qty = excluded.stock_qty,
-        sale_price = excluded.sale_price, discount = excluded.discount, rental_price = excluded.rental_price,
+        sale_price = excluded.sale_price, discount = excluded.discount, rental_price = excluded.rental_price, rental_discount = excluded.rental_discount,
         purchase_cost = excluded.purchase_cost, deposit = excluded.deposit, cleaning = excluded.cleaning,
         repair = excluded.repair, purchase_date = excluded.purchase_date, item = excluded.item, is_active = true;
 
@@ -329,11 +334,12 @@ begin
 
       insert into public.wabi_rentals
         (id, position, booking_date, phone, customer, item_id, event_date, pickup, return_due, actual_return,
-          rental_fee, deposit, damage, mode, received, deposit_refunded, notes, is_active)
+          rental_fee, discount, deposit, damage, mode, received, deposit_refunded, notes, is_active)
       select rental->>'id', ordinality::integer - 1, coalesce(rental->>'bookingDate', ''), coalesce(rental->>'phone', ''),
         coalesce(rental->>'customer', ''), coalesce(rental->>'itemId', ''), coalesce(rental->>'eventDate', ''),
         coalesce(rental->>'pickup', ''), coalesce(rental->>'returnDue', ''), coalesce(rental->>'actualReturn', ''),
-        coalesce(nullif(rental->>'rentalFee', '')::numeric, 0), coalesce(nullif(rental->>'deposit', '')::numeric, 0),
+        coalesce(nullif(rental->>'rentalFee', '')::numeric, 0), coalesce(nullif(rental->>'discount', '')::numeric, 0),
+        coalesce(nullif(rental->>'deposit', '')::numeric, 0),
         coalesce(nullif(rental->>'damage', '')::numeric, 0), coalesce(rental->>'mode', 'Cash'),
         coalesce(nullif(rental->>'received', '')::numeric, 0), coalesce(nullif(rental->>'depositRefunded', '')::numeric, 0),
         coalesce(rental->>'notes', ''), true
@@ -342,7 +348,7 @@ begin
       on conflict (id) do update set position = excluded.position, booking_date = excluded.booking_date,
         phone = excluded.phone, customer = excluded.customer, item_id = excluded.item_id, event_date = excluded.event_date,
         pickup = excluded.pickup, return_due = excluded.return_due, actual_return = excluded.actual_return,
-        rental_fee = excluded.rental_fee, deposit = excluded.deposit, damage = excluded.damage, mode = excluded.mode,
+        rental_fee = excluded.rental_fee, discount = excluded.discount, deposit = excluded.deposit, damage = excluded.damage, mode = excluded.mode,
         received = excluded.received, deposit_refunded = excluded.deposit_refunded, notes = excluded.notes, is_active = true;
 
       insert into public.wabi_transactions
@@ -458,7 +464,7 @@ returns jsonb language sql stable security definer set search_path = '' as $$
         from public.wabi_sales where is_active), '[]'::jsonb),
       'rentals', coalesce((select jsonb_agg(jsonb_build_object('id', id, 'bookingDate', booking_date, 'phone', phone,
         'customer', customer, 'itemId', item_id, 'eventDate', event_date, 'pickup', pickup,
-        'returnDue', return_due, 'actualReturn', actual_return, 'rentalFee', rental_fee,
+        'returnDue', return_due, 'actualReturn', actual_return, 'rentalFee', rental_fee, 'discount', discount,
         'deposit', deposit, 'damage', damage, 'mode', mode, 'received', received,
         'depositRefunded', deposit_refunded, 'notes', notes) order by position, id)
         from public.wabi_rentals where is_active), '[]'::jsonb),
@@ -485,11 +491,11 @@ begin
 
   update public.wabi_inventory set is_active = false where is_active;
   insert into public.wabi_inventory
-    (id, position, name, category, status, stock_qty, sale_price, discount, rental_price, purchase_cost,
+    (id, position, name, category, status, stock_qty, sale_price, discount, rental_price, rental_discount, purchase_cost,
       deposit, cleaning, repair, purchase_date, item, is_active)
   select item->>'id', ordinality::integer - 1, coalesce(item->>'name', ''), item->>'category', coalesce(item->>'status', 'Available'),
       coalesce(nullif(item->>'stockQty', '')::integer, 1), coalesce(nullif(item->>'salePrice', '')::numeric, 0),
-      coalesce(nullif(item->>'discount', '')::numeric, 0), coalesce(nullif(item->>'rentalPrice', '')::numeric, 0),
+      coalesce(nullif(item->>'discount', '')::numeric, 0), coalesce(nullif(item->>'rentalPrice', '')::numeric, 0), coalesce(nullif(item->>'rentalDiscount', '')::numeric, 0),
       coalesce(nullif(item->>'purchaseCost', '')::numeric, 0),
       coalesce(nullif(item->>'deposit', '')::numeric, 0), coalesce(nullif(item->>'cleaning', '')::numeric, 0),
       coalesce(nullif(item->>'repair', '')::numeric, 0), coalesce(item->>'purchaseDate', ''), item, true
@@ -498,7 +504,7 @@ begin
   on conflict (id) do update set name = excluded.name, category = excluded.category,
       position = excluded.position, status = excluded.status, stock_qty = excluded.stock_qty, sale_price = excluded.sale_price,
       discount = excluded.discount,
-      rental_price = excluded.rental_price, purchase_cost = excluded.purchase_cost, deposit = excluded.deposit,
+      rental_price = excluded.rental_price, rental_discount = excluded.rental_discount, purchase_cost = excluded.purchase_cost, deposit = excluded.deposit,
       cleaning = excluded.cleaning, repair = excluded.repair, purchase_date = excluded.purchase_date,
       item = excluded.item, is_active = true;
 
@@ -527,11 +533,12 @@ begin
   update public.wabi_rentals set is_active = false where is_active;
   insert into public.wabi_rentals
     (id, position, booking_date, phone, customer, item_id, event_date, pickup, return_due, actual_return,
-      rental_fee, deposit, damage, mode, received, deposit_refunded, notes, is_active)
+      rental_fee, discount, deposit, damage, mode, received, deposit_refunded, notes, is_active)
   select rental->>'id', ordinality::integer - 1, coalesce(rental->>'bookingDate', ''), coalesce(rental->>'phone', ''),
       coalesce(rental->>'customer', ''), coalesce(rental->>'itemId', ''), coalesce(rental->>'eventDate', ''),
       coalesce(rental->>'pickup', ''), coalesce(rental->>'returnDue', ''), coalesce(rental->>'actualReturn', ''),
-      coalesce(nullif(rental->>'rentalFee', '')::numeric, 0), coalesce(nullif(rental->>'deposit', '')::numeric, 0),
+      coalesce(nullif(rental->>'rentalFee', '')::numeric, 0), coalesce(nullif(rental->>'discount', '')::numeric, 0),
+        coalesce(nullif(rental->>'deposit', '')::numeric, 0),
       coalesce(nullif(rental->>'damage', '')::numeric, 0), coalesce(rental->>'mode', 'Cash'),
       coalesce(nullif(rental->>'received', '')::numeric, 0), coalesce(nullif(rental->>'depositRefunded', '')::numeric, 0),
       coalesce(rental->>'notes', ''), true
@@ -539,7 +546,7 @@ begin
     where nullif(rental->>'id', '') is not null
   on conflict (id) do update set position = excluded.position, booking_date = excluded.booking_date, phone = excluded.phone,
       customer = excluded.customer, item_id = excluded.item_id, event_date = excluded.event_date, pickup = excluded.pickup,
-      return_due = excluded.return_due, actual_return = excluded.actual_return, rental_fee = excluded.rental_fee,
+      return_due = excluded.return_due, actual_return = excluded.actual_return, rental_fee = excluded.rental_fee, discount = excluded.discount,
       deposit = excluded.deposit, damage = excluded.damage, mode = excluded.mode, received = excluded.received,
       deposit_refunded = excluded.deposit_refunded, notes = excluded.notes, is_active = true;
 

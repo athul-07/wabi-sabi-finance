@@ -16,8 +16,9 @@ module.exports = function validate(data) {
   for (const item of data.inventory) {
     nonnegative(item.stockQty, 'Stock quantity');
     if (!Number.isInteger(Number(item.stockQty))) throw new Error('Stock quantity must be a whole number.');
-    for (const key of ['purchaseCost', 'salePrice', 'discount', 'rentalPrice', 'deposit', 'cleaning', 'repair']) nonnegative(item[key] ?? 0, key);
+    for (const key of ['purchaseCost', 'salePrice', 'discount', 'rentalDiscount', 'rentalPrice', 'deposit', 'cleaning', 'repair']) nonnegative(item[key] ?? 0, key);
     if (Number(item.discount || 0) > 100) throw new Error('Inventory discount cannot exceed 100%.');
+    if (Number(item.rentalDiscount || 0) > 100) throw new Error('Inventory rental discount cannot exceed 100%.');
     stock.set(item.id, Number(item.stockQty));
   }
   for (const sale of data.sales) {
@@ -29,7 +30,8 @@ module.exports = function validate(data) {
   }
   for (const rental of data.rentals) {
     if (!stock.has(rental.itemId)) throw new Error('A rental references a missing inventory item.');
-    for (const key of ['rentalFee', 'deposit', 'received', 'damage', 'depositRefunded']) nonnegative(rental[key] ?? 0, key);
+    for (const key of ['rentalFee', 'discount', 'deposit', 'received', 'damage', 'depositRefunded']) nonnegative(rental[key] ?? 0, key);
+    if (Number(rental.discount || 0) > 100) throw new Error('Rental discount cannot exceed 100%.');
     if (rental.pickup && rental.returnDue && rental.returnDue < rental.pickup) throw new Error('Return due must be on or after pickup.');
     if (!rental.actualReturn) stock.set(rental.itemId, stock.get(rental.itemId) - 1);
   }

@@ -175,6 +175,15 @@ function createApp({ db, authClient }) {
         if (!Array.isArray(merged.customers)) return res.status(400).json({ error: 'Invalid customers.' });
         merged.customers = [...curData.customers, ...merged.customers.filter(c => c && !curData.customers.some(old => old.id === c.id || old.phone === c.phone))];
       }
+      if (!isAdmin) {
+        for (const key of ['inventory', 'sales', 'rentals', 'customers', 'transactions']) {
+          if (!Array.isArray(merged[key])) return res.status(400).json({ error: `Invalid ${key} data.` });
+          const retainedIds = new Set(merged[key].map(row => row?.id));
+          if (curData[key].some(row => !retainedIds.has(row.id))) {
+            return res.status(403).json({ error: 'Only admins can delete records.' });
+          }
+        }
+      }
       try { require('./validate-data')(merged); }
       catch (error) { return res.status(400).json({ error: error.message }); }
 

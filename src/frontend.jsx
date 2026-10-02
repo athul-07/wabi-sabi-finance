@@ -126,7 +126,7 @@ function rentalStatus(r) {
   return "Booked";
 }
 function rentalLateFee(db, r) { if (!r.returnDue || !r.actualReturn) return 0; return Math.max(0, daysBetween(r.returnDue, r.actualReturn)) * (+db.settings.lateFeePerDay || 0); }
-function rentalCharges(db, r) { const item = itemById(db, r.itemId) || {}; const fee = r.rentalFee === "" || r.rentalFee == null ? +item.rentalPrice || 0 : +r.rentalFee; return fee + rentalDeposit(db, r) + rentalLateFee(db, r); }
+function rentalCharges(db, r) { const item = itemById(db, r.itemId) || {}; const fee = r.rentalFee === "" || r.rentalFee == null ? +item.rentalPrice || 0 : +r.rentalFee; return fee * (1 - (+r.discount || 0) / 100) + rentalDeposit(db, r) + rentalLateFee(db, r); }
 function rentalDeposit(db, r) { const item = itemById(db, r.itemId) || {}; return r.deposit === "" || r.deposit == null ? +item.deposit || 0 : +r.deposit; }
 const soldQty = (db, id) => db.sales.filter((s) => s.itemId === id).reduce((a, s) => a + (+s.qty || 0), 0);
 const onRent = (db, id) => db.rentals.filter((r) => r.itemId === id && RENT_ACTIVE.includes(rentalStatus(r))).length;
@@ -300,7 +300,7 @@ function RecordFilters({ search, setSearch, searchLabel, status, setStatus, stat
     </Select>
   </div>);
 }
-function SalesView({ db, update, confirmAction, canWrite, initialOpen }) {
+function SalesView({ db, update, confirmAction, canWrite, canDelete, initialOpen }) {
   const [open, setOpen] = useState(!!initialOpen); const [edit, setEdit] = useState(null);
   const [search, setSearch] = useState(""); const [statusFilter, setStatusFilter] = useState("");
   const blank = { id: "", date: today(), phone: "", customer: "", itemId: "", qty: 1, discount: 0, unitPrice: "", mode: "Cash", received: "", notes: "" };
@@ -319,7 +319,7 @@ function SalesView({ db, update, confirmAction, canWrite, initialOpen }) {
     if (form.phone && !custByPhone(next, form.phone)) next.customers.push({ id: nextId(next.customers, "CUST-", 3), phone: form.phone.trim(), name: form.customer || "", email: "", address: "", notes: "Added from a sale" });
     if (await update(next)) { setOpen(false); toast(edit ? "Sale updated" : "Sale saved", edit ? 'updated' : 'success'); }
   };
-  const del = async (id) => { if (!await confirmAction({ kind: 'delete', title: 'Delete sale?', message: `Delete sale ${id}? This removes its automatic payment entry too.`, confirmLabel: 'Delete sale' })) return; const next = structuredClone(db); next.sales = next.sales.filter((x) => x.id !== id); if (await update(next)) toast("Sale deleted", "deleted"); };
+  const del = async (id) => { if (!canDelete) return; if (!await confirmAction({ kind: 'delete', title: 'Delete sale?', message: `Delete sale ${id}? This removes its automatic payment entry too.`, confirmLabel: 'Delete sale' })) return; const next = structuredClone(db); next.sales = next.sales.filter((x) => x.id !== id); if (await update(next)) toast("Sale deleted", "deleted"); };
   const rows = db.sales.filter((s) => {
     const needle = search.trim().toLowerCase();
     const phoneNeedle = normalizePhone(needle);
@@ -337,7 +337,7 @@ function SalesView({ db, update, confirmAction, canWrite, initialOpen }) {
         <Td>{s.id}</Td><Td>{s.date}</Td><Td>{custName(db, s.phone) || s.customer || <span style={{ color: C.muted }}>—</span>}</Td>
         <Td>{itemById(db, s.itemId)?.name || s.itemId}</Td><Td>{s.qty}</Td><Td>{inr(saleTotal(s))}</Td><Td>{inr(s.received)}</Td><Td>{inr(saleBalance(s))}</Td>
         <Td><Pill tone={statusTone(saleStatus(s))}>{saleStatus(s)}</Pill></Td>
-        {canWrite && <Td><div className="flex gap-2"><button aria-label="Edit record" onClick={() => openEdit(s)} style={{ color: C.maroon }}><Pencil size={16} /></button><button aria-label="Delete record" onClick={() => del(s.id)} style={{ color: C.red }}><Trash2 size={16} /></button></div></Td>}
+        {canWrite && <Td><div className="flex gap-2"><button aria-label="Edit record" onClick={() => openEdit(s)} style={{ color: C.maroon }}><Pencil size={16} /></button>{canDelete && <button aria-label="Delete record" onClick={() => del(s.id)} style={{ color: C.red }}><Trash2 size={16} /></button>}</div></Td>}
       </tr>))}
     </TableWrap>
     {open && canWrite && (<Modal title={edit ? "Edit sale" : "New sale"} onClose={() => setOpen(false)} wide>
@@ -346,7 +346,7 @@ function SalesView({ db, update, confirmAction, canWrite, initialOpen }) {
       <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
         <Field label="Date"><TextInput type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></Field>
         <Field label="Quantity"><TextInput type="number" min="1" value={form.qty} onChange={(e) => setForm({ ...form, qty: e.target.value })} /></Field>
-        <Field label="Discount %" hint="Auto-set from the selected item."><TextInput type="number" value={form.discount} readOnly disabled tabIndex={-1} style={{ background: C.cream, cursor: "default", opacity: 1 }} /></Field>
+        <Field label="Discount %" hint="Auto-set from the item's sales discount."><TextInput type="number" value={form.discount} readOnly disabled tabIndex={-1} style={{ background: C.cream, cursor: "default", opacity: 1 }} /></Field>
       </div>
       <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
         <Field label="Unit price" hint="Auto-set from the selected item."><TextInput type="number" value={unit} readOnly disabled tabIndex={-1} style={{ background: C.cream, cursor: "default", opacity: 1 }} /></Field>
@@ -361,10 +361,10 @@ function SalesView({ db, update, confirmAction, canWrite, initialOpen }) {
     </Modal>)}
   </div>);
 }
-function RentalsView({ db, update, confirmAction, canWrite, initialOpen }) {
+function RentalsView({ db, update, confirmAction, canWrite, canDelete, initialOpen }) {
   const [open, setOpen] = useState(!!initialOpen); const [edit, setEdit] = useState(null);
   const [search, setSearch] = useState(""); const [statusFilter, setStatusFilter] = useState("");
-  const blank = { id: "", bookingDate: today(), phone: "", customer: "", itemId: "", eventDate: "", pickup: "", returnDue: "", actualReturn: "", rentalFee: "", deposit: "", damage: 0, mode: "Cash", received: "", depositRefunded: 0, notes: "" };
+  const blank = { id: "", bookingDate: today(), phone: "", customer: "", itemId: "", eventDate: "", pickup: "", returnDue: "", actualReturn: "", rentalFee: "", discount: 0, deposit: "", damage: 0, mode: "Cash", received: "", depositRefunded: 0, notes: "" };
   const [form, setForm] = useState(blank);
   const openNew = () => { setEdit(null); setForm(blank); setOpen(true); };
   const openEdit = (r) => { setEdit(r.id); setForm({ ...blank, ...r }); setOpen(true); };
@@ -380,7 +380,7 @@ function RentalsView({ db, update, confirmAction, canWrite, initialOpen }) {
     if (form.phone && !custByPhone(next, form.phone)) next.customers.push({ id: nextId(next.customers, "CUST-", 3), phone: form.phone.trim(), name: form.customer || "", email: "", address: "", notes: "Added from a rental" });
     if (await update(next)) { setOpen(false); toast(edit ? "Rental updated" : "Rental saved", edit ? 'updated' : 'success'); }
   };
-  const del = async (id) => { if (!await confirmAction({ kind: 'delete', title: 'Delete rental?', message: `Delete rental ${id}? This removes its automatic payment entry too.`, confirmLabel: 'Delete rental' })) return; const next = structuredClone(db); next.rentals = next.rentals.filter((x) => x.id !== id); if (await update(next)) toast("Rental deleted", "deleted"); };
+  const del = async (id) => { if (!canDelete) return; if (!await confirmAction({ kind: 'delete', title: 'Delete rental?', message: `Delete rental ${id}? This removes its automatic payment entry too.`, confirmLabel: 'Delete rental' })) return; const next = structuredClone(db); next.rentals = next.rentals.filter((x) => x.id !== id); if (await update(next)) toast("Rental deleted", "deleted"); };
   const markReturned = async (r) => { if (!await confirmAction({ kind: 'update', title: 'Mark rental returned?', message: `Mark rental ${r.id} as returned today?`, confirmLabel: 'Mark returned' })) return; const next = structuredClone(db); next.rentals[next.rentals.findIndex((x) => x.id === r.id)] = { ...r, actualReturn: today() }; if (await update(next)) toast("Marked as returned", "updated"); };
   const rows = db.rentals.filter((r) => {
     const needle = search.trim().toLowerCase();
@@ -401,21 +401,22 @@ function RentalsView({ db, update, confirmAction, canWrite, initialOpen }) {
           <Td>{r.returnDue || "—"}</Td><Td>{inr(rentalCharges(db, r))}</Td><Td>{inr(r.received)}</Td><Td>{inr(Math.max(0, rentalCharges(db, r) - (+r.received || 0)))}</Td>
           <Td><Pill tone={statusTone(st)}>{st}</Pill></Td><Td>{inr(held)}</Td>
           {canWrite && <Td><div className="flex gap-2">{st !== "Returned" && <button title="Mark returned" onClick={() => markReturned(r)} style={{ color: C.green }}><Check size={16} /></button>}
-            <button aria-label="Edit record" onClick={() => openEdit(r)} style={{ color: C.maroon }}><Pencil size={16} /></button><button aria-label="Delete record" onClick={() => del(r.id)} style={{ color: C.red }}><Trash2 size={16} /></button></div></Td>}
+            <button aria-label="Edit record" onClick={() => openEdit(r)} style={{ color: C.maroon }}><Pencil size={16} /></button>{canDelete && <button aria-label="Delete record" onClick={() => del(r.id)} style={{ color: C.red }}><Trash2 size={16} /></button>}</div></Td>}
         </tr>);
       })}
     </TableWrap>
     {open && canWrite && (<Modal title={edit ? "Edit rental" : "New rental"} onClose={() => setOpen(false)} wide>
       <CustomerFields db={db} form={form} set={setForm} />
-      <ItemPicker db={db} value={form.itemId} onChange={(v) => { const selectedItem = itemById(db, v); setForm({ ...form, itemId: v, rentalFee: selectedItem ? selectedItem.rentalPrice : "", deposit: selectedItem ? selectedItem.deposit : "" }); }} />
+      <ItemPicker db={db} value={form.itemId} onChange={(v) => { const selectedItem = itemById(db, v); setForm({ ...form, itemId: v, rentalFee: selectedItem ? selectedItem.rentalPrice : "", discount: selectedItem?.rentalDiscount ?? 0, deposit: selectedItem ? selectedItem.deposit : "" }); }} />
       <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr 1fr 1fr" }}>
         <Field label="Event date"><TextInput type="date" value={form.eventDate} onChange={(e) => setForm({ ...form, eventDate: e.target.value })} /></Field>
         <Field label="Pickup"><TextInput type="date" value={form.pickup} onChange={(e) => setForm({ ...form, pickup: e.target.value })} /></Field>
         <Field label="Return due"><TextInput type="date" value={form.returnDue} onChange={(e) => setForm({ ...form, returnDue: e.target.value })} /></Field>
         <Field label="Actual return" hint="Fill on return"><TextInput type="date" value={form.actualReturn} onChange={(e) => setForm({ ...form, actualReturn: e.target.value })} /></Field>
       </div>
-      <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
+      <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr 1fr 1fr" }}>
         <Field label="Rental fee" hint="Set from the selected item; cannot be edited."><TextInput type="number" value={preview.rentalFee} readOnly style={{ background: C.cream }} /></Field>
+        <Field label="Discount %" hint="Auto-set from the item's rental discount."><TextInput type="number" value={form.discount} readOnly style={{ background: C.cream }} /></Field>
         <Field label="Security deposit" hint="Set from the selected item; cannot be edited."><TextInput type="number" value={preview.deposit} readOnly style={{ background: C.cream }} /></Field>
         <Field label="Damage charge"><TextInput type="number" value={form.damage} onChange={(e) => setForm({ ...form, damage: e.target.value })} /></Field>
       </div>
@@ -431,16 +432,16 @@ function RentalsView({ db, update, confirmAction, canWrite, initialOpen }) {
     </Modal>)}
   </div>);
 }
-function InventoryView({ db, update, confirmAction, canWrite }) {
+function InventoryView({ db, update, confirmAction, canWrite, canDelete }) {
   const [open, setOpen] = useState(false); const [edit, setEdit] = useState(null); const [q, setQ] = useState("");
-  const blank = { id: "", name: "", category: "Party wear", purchaseCost: 0, salePrice: 0, discount: 0, rentalPrice: 0, deposit: 1500, cleaning: 450, repair: 1000, status: "Available", stockQty: 1, purchaseDate: "" };
+  const blank = { id: "", name: "", category: "Party wear", purchaseCost: 0, salePrice: 0, discount: 0, rentalPrice: 0, rentalDiscount: 0, deposit: 1500, cleaning: 450, repair: 1000, status: "Available", stockQty: 1, purchaseDate: "" };
   const [form, setForm] = useState(blank);
   const openNew = () => { setEdit(null); setForm({ ...blank, id: nextId(db.inventory, "WS-", 3) }); setOpen(true); };
   const openEdit = (i) => { setEdit(i.id); setForm({ ...blank, ...i }); setOpen(true); };
   const save = async () => { if (!form.name) return; if (edit && !await confirmAction({ kind: 'update', title: 'Update item?', message: `Save changes to item ${edit}?`, confirmLabel: 'Update item' })) return; const next = structuredClone(db); if (edit) next.inventory[next.inventory.findIndex((x) => x.id === edit)] = form; else next.inventory.push(form); if (await update(next)) { setOpen(false); toast(edit ? "Item updated" : "Item added", edit ? 'updated' : 'success'); } };
-  const del = async (id) => { if (!await confirmAction({ kind: 'delete', title: 'Delete item?', message: `Delete item ${id}? Items used by a sale or rental cannot be removed.`, confirmLabel: 'Delete item' })) return; const next = structuredClone(db); next.inventory = next.inventory.filter((x) => x.id !== id); if (await update(next)) toast("Item deleted", "deleted"); };
+  const del = async (id) => { if (!canDelete) return; if (!await confirmAction({ kind: 'delete', title: 'Delete item?', message: `Delete item ${id}? Items used by a sale or rental cannot be removed.`, confirmLabel: 'Delete item' })) return; const next = structuredClone(db); next.inventory = next.inventory.filter((x) => x.id !== id); if (await update(next)) toast("Item deleted", "deleted"); };
   const rows = db.inventory.filter((i) => (i.name + i.id + i.category).toLowerCase().includes(q.toLowerCase()));
-  const head = ["ID", "Item", "Category", "Sale price", "Discount", "Rental", "Deposit", "Stock", "Available", "Rental status", "Item status"]; if (canWrite) head.push("");
+  const head = ["ID", "Item", "Category", "Sale price", "Sales discount", "Rental", "Rental discount", "Deposit", "Stock", "Available", "Rental status", "Item status"]; if (canWrite) head.push("");
   return (<div>
     <SectionHead title="Inventory" readonly={!canWrite} subtitle="Your outfits and items. “Available” drops as things are sold or rented out, and returns when a rental comes back."
       action={canWrite ? <Btn kind="gold" onClick={openNew}><Plus size={16} /> Add item</Btn> : null} />
@@ -449,10 +450,10 @@ function InventoryView({ db, update, confirmAction, canWrite }) {
     <TableWrap head={head}>
       {rows.map((i) => {
         const av = available(db, i); const lr = liveRental(db, i.id); const itemStatus = av === 0 ? "Unavailable" : i.status; return (<tr key={i.id}>
-          <Td>{i.id}</Td><Td>{i.name}</Td><Td>{i.category}</Td><Td>{inr(i.salePrice)}</Td><Td>{Number(i.discount || 0)}%</Td><Td>{inr(i.rentalPrice)}</Td><Td>{inr(i.deposit)}</Td>
+          <Td>{i.id}</Td><Td>{i.name}</Td><Td>{i.category}</Td><Td>{inr(i.salePrice)}</Td><Td>{Number(i.discount || 0)}%</Td><Td>{inr(i.rentalPrice)}</Td><Td>{Number(i.rentalDiscount || 0)}%</Td><Td>{inr(i.deposit)}</Td>
           <Td>{i.stockQty}</Td><Td><b style={{ color: av === 0 ? C.red : C.green }}>{av}</b></Td>
           <Td><Pill tone={lr.tone}>{lr.label}</Pill></Td><Td><Pill tone={itemStatus === "Available" ? "green" : itemStatus === "Unavailable" ? "red" : "grey"}>{itemStatus}</Pill></Td>
-          {canWrite && <Td><div className="flex gap-2"><button aria-label="Edit record" onClick={() => openEdit(i)} style={{ color: C.maroon }}><Pencil size={16} /></button><button aria-label="Delete record" onClick={() => del(i.id)} style={{ color: C.red }}><Trash2 size={16} /></button></div></Td>}
+          {canWrite && <Td><div className="flex gap-2"><button aria-label="Edit record" onClick={() => openEdit(i)} style={{ color: C.maroon }}><Pencil size={16} /></button>{canDelete && <button aria-label="Delete record" onClick={() => del(i.id)} style={{ color: C.red }}><Trash2 size={16} /></button>}</div></Td>}
         </tr>);
       })}
     </TableWrap>
@@ -465,8 +466,11 @@ function InventoryView({ db, update, confirmAction, canWrite }) {
       <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
         <Field label="Purchase cost"><TextInput type="number" value={form.purchaseCost} onChange={(e) => setForm({ ...form, purchaseCost: e.target.value })} /></Field>
         <Field label="Sale price"><TextInput type="number" value={form.salePrice} onChange={(e) => setForm({ ...form, salePrice: e.target.value })} /></Field>
-        <Field label="Discount %"><TextInput type="number" min="0" max="100" value={form.discount} onChange={(e) => setForm({ ...form, discount: e.target.value })} /></Field>
+        <Field label="Sales discount %"><TextInput type="number" min="0" max="100" value={form.discount} onChange={(e) => setForm({ ...form, discount: e.target.value })} /></Field>
+      </div>
+      <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr" }}>
         <Field label="Rental price"><TextInput type="number" value={form.rentalPrice} onChange={(e) => setForm({ ...form, rentalPrice: e.target.value })} /></Field>
+        <Field label="Rental discount %"><TextInput type="number" min="0" max="100" value={form.rentalDiscount} onChange={(e) => setForm({ ...form, rentalDiscount: e.target.value })} /></Field>
       </div>
       <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr 1fr 1fr" }}>
         <Field label="Security deposit"><TextInput type="number" value={form.deposit} onChange={(e) => setForm({ ...form, deposit: e.target.value })} /></Field>
@@ -482,13 +486,13 @@ function InventoryView({ db, update, confirmAction, canWrite }) {
     </Modal>)}
   </div>);
 }
-function CustomersView({ db, update, confirmAction, canWrite }) {
+function CustomersView({ db, update, confirmAction, canWrite, canDelete }) {
   const [open, setOpen] = useState(false); const [edit, setEdit] = useState(null);
   const blank = { id: "", phone: "", name: "", email: "", address: "", notes: "" }; const [form, setForm] = useState(blank);
   const openNew = () => { setEdit(null); setForm(blank); setOpen(true); };
   const openEdit = (c) => { setEdit(c.id); setForm({ ...c }); setOpen(true); };
   const save = async () => { if (!form.phone && !form.name) return; if (edit && !await confirmAction({ kind: 'update', title: 'Update customer?', message: `Save changes to customer ${edit}?`, confirmLabel: 'Update customer' })) return; const next = structuredClone(db); if (edit) next.customers[next.customers.findIndex((x) => x.id === edit)] = form; else next.customers.push({ ...form, id: nextId(next.customers, "CUST-", 3) }); if (await update(next)) { setOpen(false); toast(edit ? "Customer updated" : "Customer saved", edit ? 'updated' : 'success'); } };
-  const del = async (id) => { if (!await confirmAction({ kind: 'delete', title: 'Delete customer?', message: `Delete customer ${id}?`, confirmLabel: 'Delete customer' })) return; const next = structuredClone(db); next.customers = next.customers.filter((x) => x.id !== id); if (await update(next)) toast("Customer deleted", "deleted"); };
+  const del = async (id) => { if (!canDelete) return; if (!await confirmAction({ kind: 'delete', title: 'Delete customer?', message: `Delete customer ${id}?`, confirmLabel: 'Delete customer' })) return; const next = structuredClone(db); next.customers = next.customers.filter((x) => x.id !== id); if (await update(next)) toast("Customer deleted", "deleted"); };
   const head = ["ID", "Name", "Phone", "Email", "Orders", "Billed", "Outstanding"]; if (canWrite) head.push("");
   return (<div>
     <SectionHead title="Customers" readonly={!canWrite} subtitle="Everyone you've served. New customers are added here the moment you enter them on a sale or rental."
@@ -498,7 +502,7 @@ function CustomersView({ db, update, confirmAction, canWrite }) {
       {db.customers.map((c) => {
         const st = custStats(db, c.phone); return (<tr key={c.id}>
           <Td>{c.id}</Td><Td>{c.name}</Td><Td>{c.phone}</Td><Td>{c.email || "—"}</Td><Td>{st.orders}</Td><Td>{inr(st.billed)}</Td><Td>{inr(st.outstanding)}</Td>
-          {canWrite && <Td><div className="flex gap-2"><button aria-label="Edit record" onClick={() => openEdit(c)} style={{ color: C.maroon }}><Pencil size={16} /></button><button aria-label="Delete record" onClick={() => del(c.id)} style={{ color: C.red }}><Trash2 size={16} /></button></div></Td>}
+          {canWrite && <Td><div className="flex gap-2"><button aria-label="Edit record" onClick={() => openEdit(c)} style={{ color: C.maroon }}><Pencil size={16} /></button>{canDelete && <button aria-label="Delete record" onClick={() => del(c.id)} style={{ color: C.red }}><Trash2 size={16} /></button>}</div></Td>}
         </tr>);
       })}
     </TableWrap>
@@ -512,13 +516,13 @@ function CustomersView({ db, update, confirmAction, canWrite }) {
     </Modal>)}
   </div>);
 }
-function TransactionsView({ db, update, confirmAction, canWrite }) {
+function TransactionsView({ db, update, confirmAction, canWrite, canDelete }) {
   const [open, setOpen] = useState(false);
   const [dateFilter, setDateFilter] = useState("");
   const blank = { id: "", date: today(), type: "Expense", category: "Rent", desc: "", party: "", mode: "Cash", account: "", amount: "", notes: "" };
   const [form, setForm] = useState(blank);
   const save = async () => { if (!form.amount) return; const next = structuredClone(db); next.transactions.push({ ...form, id: nextId(next.transactions, "TX-", 1) }); if (await update(next)) { setOpen(false); setForm(blank); toast("Transaction saved"); } };
-  const del = async (id) => { if (!await confirmAction({ kind: 'delete', title: 'Delete transaction?', message: `Delete transaction ${id}?`, confirmLabel: 'Delete transaction' })) return; const next = structuredClone(db); next.transactions = next.transactions.filter((x) => x.id !== id); if (await update(next)) toast("Transaction deleted", "deleted"); };
+  const del = async (id) => { if (!canDelete) return; if (!await confirmAction({ kind: 'delete', title: 'Delete transaction?', message: `Delete transaction ${id}?`, confirmLabel: 'Delete transaction' })) return; const next = structuredClone(db); next.transactions = next.transactions.filter((x) => x.id !== id); if (await update(next)) toast("Transaction deleted", "deleted"); };
   const allRows = allTx(db).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
   const rows = allRows.filter((t) => !dateFilter || String(t.date || "").slice(0, 10) === dateFilter);
   const summaryRows = dateFilter ? rows : allRows;
@@ -537,7 +541,7 @@ function TransactionsView({ db, update, confirmAction, canWrite }) {
         <Td>{t.date}</Td><Td><Pill tone={t.type === "Income" ? "green" : "red"}>{t.type}</Pill></Td><Td>{t.category}</Td><Td>{t.desc || "—"}</Td><Td>{t.party || "—"}</Td><Td>{t.mode || "—"}</Td>
         <Td style={{ color: t.type === "Income" ? C.green : C.red, fontWeight: 600 }}>{inr(t.amount)}</Td>
         <Td>{t.auto ? <Pill tone="grey">Auto</Pill> : <Pill tone="maroon">Manual</Pill>}</Td>
-        {canWrite && <Td>{t.auto ? <span style={{ color: C.muted, fontSize: 12 }}>from {t.ref}</span> : <button aria-label="Delete record" onClick={() => del(t.id)} style={{ color: C.red }}><Trash2 size={16} /></button>}</Td>}
+        {canWrite && <Td>{t.auto ? <span style={{ color: C.muted, fontSize: 12 }}>from {t.ref}</span> : canDelete && <button aria-label="Delete record" onClick={() => del(t.id)} style={{ color: C.red }}><Trash2 size={16} /></button>}</Td>}
       </tr>))}
     </TableWrap>
     {open && canWrite && (<Modal title="Add transaction" onClose={() => setOpen(false)}>
@@ -810,7 +814,7 @@ function Shell() {
       <header className="topbar"><div className="breadcrumb"><span>Workspace</span><ChevronRight size={14} /><strong>{tab}</strong></div><div className="topbar-actions"><SyncBadge /><span className="today-label">{new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}</span><ThemeToggle /><span className="avatar small-avatar">{(me.name || me.username).slice(0, 1).toUpperCase()}</span><button className="mobile-signout" onClick={signOut} aria-label="Sign out"><LogOut size={17} /></button></div></header>
       <nav className="mobile-nav" aria-label="Mobile navigation">{nav.map(n => <NavBtn key={n} name={n} />)}</nav>
       <main>
-        <View key={tab} db={db} update={update} confirmAction={confirmAction} me={me} onSignOut={signOut} canWrite={canWrite(tab)} initialOpen={initialOpen} onNavigate={navigate} canAccess={allowed} canCreate={canWrite} onNotify={toast} metrics={{ today, monthOf, allTx, inr, saleBalance, rentalCharges, rentalDeposit, available, saleTotal, itemById, rentalStatus }} />
+        <View key={tab} db={db} update={update} confirmAction={confirmAction} me={me} onSignOut={signOut} canWrite={canWrite(tab)} canDelete={me.role === 'admin'} initialOpen={initialOpen} onNavigate={navigate} canAccess={allowed} canCreate={canWrite} onNotify={toast} metrics={{ today, monthOf, allTx, inr, saleBalance, rentalCharges, rentalDeposit, available, saleTotal, itemById, rentalStatus }} />
       </main>
     </div>
     {confirmation && <ConfirmDialog action={confirmation} onResolve={resolveConfirmation} />}

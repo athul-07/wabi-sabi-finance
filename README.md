@@ -116,6 +116,15 @@ screens receive customer names/phones and stock lookup fields they need, even
 without Customers/Inventory page access. Hidden inventory costs and manual ledger
 entries are omitted. Dashboard, Transactions, and Customers summary access also
 requires related order information for totals. Appearance is saved per account.
+Staff can add and edit records on pages with write access; deleting records in
+any tab is reserved for admins and enforced by the API.
+
+Inventory has separate **Sales discount %** and **Rental discount %** fields.
+Selecting an item in a new sale or rental fills its corresponding discount.
+Rental discounts apply to the rental fee; deposits and late fees are unchanged.
+Saved orders retain their original discount when inventory discounts change.
+Existing deployments must reapply `supabase/schema.sql` before deploying this
+version to add the rental discount columns and update the shop functions.
 
 ## Development and verification
 

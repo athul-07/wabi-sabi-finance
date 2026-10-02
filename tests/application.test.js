@@ -156,6 +156,59 @@ test('session cookies, logout, account preferences, live permissions, password c
   assert.equal((await request('/users/securestaff', 'DELETE')).status, 200);
 });
 
+test('staff can add and edit records but only admins can delete in every section', async () => {
+  const original = (await request('/data')).data;
+  const permissions = Object.fromEntries(['Sales', 'Rentals', 'Inventory', 'Customers', 'Transactions'].map(page => [page, 'write']));
+  await request('/users', 'POST', { username: 'deletestaff', email: 'delete-staff@example.com', password: 'delete-staff-password', permissions });
+  const staff = (await request('/login', 'POST', { username: 'deletestaff', password: 'delete-staff-password' }, null)).cookie;
+  try {
+    const seeded = structuredClone(original.data);
+    seeded.sales.push({ id: 'SALE-DELETE', itemId: 'WS-001', qty: 1, unitPrice: 100, discount: 10, received: 10 });
+    seeded.rentals.push({ id: 'RENT-DELETE', itemId: 'WS-002', rentalFee: 100, discount: 20, deposit: 50 });
+    seeded.transactions.push({ id: 'TX-DELETE', amount: 10 });
+    seeded.inventory[2].discount = 15;
+    seeded.inventory[2].rentalDiscount = 25;
+    const added = await request('/data', 'PUT', { data: seeded, baseVersion: original.version }, staff);
+    assert.equal(added.status, 200);
+    const edited = structuredClone(added.data.data);
+    edited.sales[0].received = 20;
+    const updated = await request('/data', 'PUT', { data: edited, baseVersion: added.data.version }, staff);
+    assert.equal(updated.status, 200);
+    for (const key of ['inventory', 'sales', 'rentals', 'customers', 'transactions']) {
+      const removed = structuredClone(updated.data.data);
+      removed[key].pop();
+      const result = await request('/data', 'PUT', { data: removed, baseVersion: updated.data.version }, staff);
+      assert.equal(result.status, 403, key);
+      assert.equal(result.data.error, 'Only admins can delete records.');
+      assert.equal((await request('/data')).data.version, updated.data.version, 'Rejected deletes must not save');
+    }
+    await request('/users/deletestaff', 'PUT', { permissions: { Sales: 'write', Rentals: 'write' } });
+    const restricted = (await request('/data', 'GET', undefined, staff)).data.data;
+    assert.equal(restricted.inventory[2].discount, 15);
+    assert.equal(restricted.inventory[2].rentalDiscount, 25);
+    assert.equal(restricted.inventory[2].purchaseCost, undefined);
+    for (const [section, field] of [['inventory', 'rentalDiscount'], ['rentals', 'discount']]) {
+      for (const value of [-1, 101, 'invalid']) {
+        const bad = structuredClone(updated.data.data);
+        bad[section][0][field] = value;
+        assert.equal((await request('/data', 'PUT', { data: bad, baseVersion: updated.data.version })).status, 400);
+      }
+    }
+    // A concurrent admin change must not allow a stale staff deletion through the merge.
+    await request('/users/deletestaff', 'PUT', { permissions });
+    const concurrent = structuredClone(updated.data.data);
+    concurrent.settings.shopName = 'Concurrent change';
+    assert.equal((await request('/data', 'PUT', { data: concurrent, baseVersion: updated.data.version })).status, 200);
+    const staleDelete = structuredClone(updated.data.data);
+    staleDelete.sales = [];
+    assert.equal((await request('/data', 'PUT', { data: staleDelete, baseData: updated.data.data, baseVersion: updated.data.version }, staff)).status, 403);
+  } finally {
+    const current = (await request('/data')).data;
+    assert.equal((await request('/data', 'PUT', { data: original.data, baseVersion: current.version })).status, 200, 'Admins can delete records');
+    await request('/users/deletestaff', 'DELETE');
+  }
+});
+
 test('browser: sales, customer reuse, ledger, rentals, return, persistence, and mobile layout', { timeout: 90000 }, async () => {
   const browser = await chromium.launch({ headless: true, ...(process.platform === 'win32' ? { channel: 'msedge' } : {}) });
   try {
@@ -213,7 +266,8 @@ test('browser: sales, customer reuse, ledger, rentals, return, persistence, and 
       return Math.abs((rect.top + rect.bottom) / 2 - innerHeight / 2);
     })).toBeLessThan(2);
     assert.match(await editDialog.evaluate(el => getComputedStyle(el.parentElement).backdropFilter), /blur\(/);
-    await page.getByLabel('Discount %').fill('12');
+    await page.getByLabel('Sales discount %').fill('12');
+    await page.getByLabel('Rental discount %').fill('20');
     await page.getByRole('button', { name: 'Save item', exact: true }).click();
     await expect(page.getByRole('dialog', { name: 'Update item?' })).toBeVisible();
     await page.getByRole('dialog', { name: 'Update item?' }).getByRole('button', { name: 'Cancel' }).click();
@@ -221,6 +275,20 @@ test('browser: sales, customer reuse, ledger, rentals, return, persistence, and 
     await page.getByRole('button', { name: 'Save item', exact: true }).click();
     await page.getByRole('dialog', { name: 'Update item?' }).getByRole('button', { name: 'Update item' }).click();
     await expect(page.locator('tbody tr').filter({ hasText: 'WS-001' })).toContainText('12%');
+    await expect(page.getByRole('columnheader', { name: 'Sales discount', exact: true })).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: 'Rental discount', exact: true })).toBeVisible();
+    await page.locator('tbody tr').filter({ hasText: 'WS-002' }).getByRole('button', { name: 'Edit record' }).click();
+    await page.getByLabel('Sales discount %').fill('15');
+    await page.getByLabel('Rental discount %').fill('25');
+    await page.getByRole('button', { name: 'Save item', exact: true }).click();
+    await page.getByRole('dialog', { name: 'Update item?' }).getByRole('button', { name: 'Update item' }).click();
+    await page.getByRole('button', { name: 'Sales', exact: true }).click();
+    await page.getByRole('button', { name: 'New sale', exact: true }).click();
+    await page.getByLabel('Item', { exact: true }).fill('WS-002');
+    await page.getByRole('option', { name: /WS-002 Test outfit 2/ }).click();
+    await expect(page.getByLabel('Discount %')).toHaveValue('15');
+    await expect(page.getByText(/Sale total/)).toContainText('₹13,940');
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click();
     await page.getByRole('button', { name: 'Transactions', exact: true }).click();
     await expect(page.getByText('Sale GR-001', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Add expense / entry', exact: true }).click();
@@ -257,14 +325,16 @@ test('browser: sales, customer reuse, ledger, rentals, return, persistence, and 
     await page.getByRole('option', { name: /WS-002 Test outfit 2/ }).click();
     await expect(page.getByLabel('Rental fee')).toHaveValue('3200');
     await expect(page.getByLabel('Rental fee')).toHaveAttribute('readonly', '');
+    await expect(page.getByLabel('Discount %')).toHaveValue('25');
+    await expect(page.getByLabel('Discount %')).toHaveAttribute('readonly', '');
     await expect(page.getByLabel('Security deposit')).toHaveValue('1500');
     await expect(page.getByLabel('Security deposit')).toHaveAttribute('readonly', '');
     await page.getByLabel('Amount received').fill('3200');
     await page.getByRole('button', { name: 'Save rental', exact: true }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
     const rentalRow = page.getByRole('row').filter({ hasText: 'WSB-0001' });
-    await expect(rentalRow.locator('td').nth(4)).toHaveText('₹4,700');
-    await expect(rentalRow.locator('td').nth(6)).toHaveText('₹1,500');
+    await expect(rentalRow.locator('td').nth(4)).toHaveText('₹3,900');
+    await expect(rentalRow.locator('td').nth(6)).toHaveText('₹700');
     const rentalSearch = page.getByLabel('Search rentals by name or phone');
     await rentalSearch.fill('9000000000');
     await expect(page.getByText('WSB-0001', { exact: true })).toBeVisible();
@@ -286,6 +356,8 @@ test('browser: sales, customer reuse, ledger, rentals, return, persistence, and 
     const rec = (await request('/data')).data;
     assert.equal(rec.data.sales.length, 1);
     assert.equal(rec.data.rentals.length, 1);
+    assert.equal(Number(rec.data.rentals[0].discount), 25);
+    assert.equal(Number(rec.data.sales[0].discount), 0, 'Existing sales retain their original discount');
     assert.ok(rec.data.rentals[0].actualReturn);
     assert.equal(rec.data.customers.length, 2);
     await page.getByRole('button', { name: 'Dashboard', exact: true }).click();
@@ -335,4 +407,48 @@ test('browser: sales, customer reuse, ledger, rentals, return, persistence, and 
     await expect(page.locator('.toast-deleted')).toContainText('Sale deleted');
     assert.deepEqual(errors, []);
   } finally { await browser.close(); }
+});
+
+
+test('browser: staff have no delete controls and receive both inventory discounts', { timeout: 60000 }, async () => {
+  await request('/users', 'POST', { username: 'browserstaff', email: 'browserstaff@example.com', password: 'browser-staff-password' });
+  const browser = await chromium.launch({ headless: true, ...(process.platform === 'win32' ? { channel: 'msedge' } : {}) });
+  try {
+    const page = await browser.newPage();
+    await page.goto(base);
+    await page.getByLabel('Username').fill('browserstaff');
+    await page.getByLabel('Password', { exact: true }).fill('browser-staff-password');
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Sales', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'New sale', exact: true }).click();
+    await page.getByLabel('Item', { exact: true }).fill('WS-002');
+    await page.getByRole('option', { name: /WS-002 Test outfit 2/ }).click();
+    await expect(page.getByLabel('Discount %')).toHaveValue('15');
+    await page.getByRole('button', { name: 'Save sale', exact: true }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Edit record' })).toHaveCount(1);
+    await expect(page.getByRole('button', { name: 'Delete record' })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Rentals', exact: true }).click();
+    await page.getByRole('button', { name: 'New rental', exact: true }).click();
+    await page.getByLabel('Item', { exact: true }).fill('WS-001');
+    await page.getByRole('option', { name: /WS-001 Test outfit 1/ }).click();
+    await expect(page.getByLabel('Discount %')).toHaveValue('20');
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+    const permissions = Object.fromEntries(['Dashboard', 'Sales', 'Rentals', 'Inventory', 'Customers', 'Transactions', 'Settings'].map(name => [name, 'write']));
+    await request('/users/browserstaff', 'PUT', { permissions });
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Dashboard', exact: true })).toBeVisible();
+    for (const name of ['Sales', 'Rentals', 'Inventory', 'Customers', 'Transactions', 'Settings']) {
+      await page.getByRole('button', { name, exact: true }).click();
+      await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: /Delete/ })).toHaveCount(0);
+      if (['Sales', 'Rentals', 'Inventory', 'Customers'].includes(name)) {
+        assert.ok(await page.getByRole('button', { name: 'Edit record' }).count() > 0, name + ' keeps edit controls');
+      }
+    }
+    await expect(page.getByRole('button', { name: 'Users', exact: true })).toHaveCount(0);
+  } finally {
+    await browser.close();
+    await request('/users/browserstaff', 'DELETE');
+  }
 });

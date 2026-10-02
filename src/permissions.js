@@ -14,7 +14,7 @@ function visibleRecord(rec, user) {
   const lookup = orders || read('Inventory') || read('Customers') || summary;
   const d = rec.data;
   return { ...rec, data: {
-    inventory: read('Inventory') || summary ? d.inventory : lookup ? d.inventory.map(r => pick(r, ['id', 'name', 'category', 'salePrice', 'rentalPrice', 'deposit', 'status', 'stockQty'])) : [],
+    inventory: read('Inventory') || summary ? d.inventory : lookup ? d.inventory.map(r => pick(r, ['id', 'name', 'category', 'salePrice', 'discount', 'rentalPrice', 'rentalDiscount', 'deposit', 'status', 'stockQty'])) : [],
     customers: read('Customers') || summary ? d.customers : orders ? d.customers.map(r => pick(r, ['id', 'name', 'phone'])) : [],
     sales: read('Sales') || read('Customers') || summary ? d.sales : lookup ? d.sales.map(r => pick(r, ['id', 'itemId', 'qty'])) : [],
     rentals: read('Rentals') || read('Customers') || summary ? d.rentals : lookup ? d.rentals.map(r => pick(r, ['id', 'itemId', 'pickup', 'returnDue', 'actualReturn'])) : [],
