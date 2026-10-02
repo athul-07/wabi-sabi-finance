@@ -676,6 +676,10 @@ function UsersView({ me, confirmAction }) {
 }
 
 /* ---------------- login ---------------- */
+function BrandLogo({ animated = false, className = '' }) {
+  return <img className={`brand-logo ${className}`} src={animated ? '/assets/logo-animated.svg' : '/assets/logo.svg'} alt="Wabi Sabi" width="684" height="146" draggable={false} />;
+}
+
 function Login({ onLogin }) {
   const [u, setU] = useState(""); const [p, setP] = useState(""); const [err, setErr] = useState(""); const [busy, setBusy] = useState(false);
   const submit = async (e) => {
@@ -685,9 +689,9 @@ function Login({ onLogin }) {
   };
   return (<div className="login-page">
     <div className="login-theme"><ThemeToggle /></div>
-    <div className="login-story"><div className="brand"><span className="brand-mark">w.</span><div>Wabi Sabi<small>SALES &amp; RENTALS</small></div></div><div><span className="eyebrow">LESS ADMIN. MORE POSSIBILITY.</span><h1>Beautiful things.<br />Simply managed.</h1><p>A thoughtful home for your collection, your customers, and every moment in between.</p></div><span className="login-story-footer">Your boutique, beautifully in balance.</span></div>
+    <div className="login-story"><div className="brand"><BrandLogo animated /><small>SALES &amp; RENTALS</small></div><div><span className="eyebrow">LESS ADMIN. MORE POSSIBILITY.</span><h1>Beautiful things.<br />Simply managed.</h1><p>A thoughtful home for your collection, your customers, and every moment in between.</p></div><span className="login-story-footer">Your boutique, beautifully in balance.</span></div>
     <form className="login-form" onSubmit={submit}>
-      <span className="brand-mark">w.</span><h2>Welcome back</h2>
+      <BrandLogo /><h2>Welcome back</h2>
       <p className="login-subtitle">Sign in to your Wabi Sabi workspace.</p>
       <Field label="Username"><TextInput value={u} onChange={(e) => setU(e.target.value)} autoComplete="username" required autoFocus /></Field>
       <Field label="Password"><TextInput type="password" autoComplete="current-password" required value={p} onChange={(e) => setP(e.target.value)} /></Field>
@@ -783,7 +787,7 @@ function Shell() {
 
   if (!authed) return <>{fontsLink}<Login onLogin={(u) => { setLoadError(''); setMe(u); setAuthed(true); window.dispatchEvent(new CustomEvent('wabi-user', { detail: u })); }} /></>;
   if (loadError) return <div className="p-8" role="alert">Could not load your shop: {loadError} <Btn onClick={() => location.reload()}>Retry</Btn></div>;
-  if (!db || !me || !tab) return <div className="shop-loader">{fontsLink}<div className="loader-brand"><span className="loader-mark">w.</span></div><div className="loader-text"><strong>Wabi Sabi</strong><p>Loading your shop…</p></div><div className="loader-spinner" /><div className="loader-shimmer" /></div>;
+  if (!db || !me || !tab) return <div className="shop-loader">{fontsLink}<div className="loader-brand"><BrandLogo animated /></div><div className="loader-text"><strong>Wabi Sabi</strong><p>Loading your shop…</p></div><div className="loader-spinner" /><div className="loader-shimmer" /></div>;
 
   let View;
   if (tab === "Users") View = UsersView;
@@ -804,14 +808,14 @@ function Shell() {
     <ToastContainer />
     {fontsLink}
     <aside className="sidebar">
-      <div className="brand"><span className="brand-mark">w.</span><div>Wabi Sabi<small>SALES &amp; RENTALS</small></div></div>
+      <div className="brand"><BrandLogo /><small>SALES &amp; RENTALS</small></div>
       <div className="workspace-badge"><span className="workspace-initial">W</span><div>Your workspace<small>{db.settings.shopName || 'Wabi Sabi'} boutique</small></div><ChevronRight size={14} /></div>
       <nav><div className="nav-label">WORKSPACE</div>{dataPages.map(n => <NavBtn key={n} name={n} />)}<div className="nav-label management-label">MANAGE</div>{nav.filter(n => !dataPages.includes(n)).map(n => <NavBtn key={n} name={n} />)}</nav>
       <div className="sidebar-note"><Sparkles size={19} /><strong>A little less busywork.</strong><p>More time for what you love.</p></div>
       <div className="sidebar-profile"><span className="avatar">{(me.name || me.username).slice(0, 1).toUpperCase()}</span><div><strong>{me.name || me.username}</strong><small>{me.role === 'admin' ? 'Administrator' : 'Team member'}</small></div><button onClick={signOut} aria-label="Sign out" title="Sign out"><LogOut size={18} /></button></div>
     </aside>
     <div className="app-content">
-      <header className="topbar"><div className="breadcrumb"><span>Workspace</span><ChevronRight size={14} /><strong>{tab}</strong></div><div className="topbar-actions"><SyncBadge /><span className="today-label">{new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}</span><ThemeToggle /><span className="avatar small-avatar">{(me.name || me.username).slice(0, 1).toUpperCase()}</span><button className="mobile-signout" onClick={signOut} aria-label="Sign out"><LogOut size={17} /></button></div></header>
+      <header className="topbar"><div className="topbar-heading"><BrandLogo className="mobile-brand" /><div className="breadcrumb"><span>Workspace</span><ChevronRight size={14} /><strong>{tab}</strong></div></div><div className="topbar-actions"><SyncBadge /><span className="today-label">{new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}</span><ThemeToggle /><span className="avatar small-avatar">{(me.name || me.username).slice(0, 1).toUpperCase()}</span><button className="mobile-signout" onClick={signOut} aria-label="Sign out"><LogOut size={17} /></button></div></header>
       <nav className="mobile-nav" aria-label="Mobile navigation">{nav.map(n => <NavBtn key={n} name={n} />)}</nav>
       <main>
         <View key={tab} db={db} update={update} confirmAction={confirmAction} me={me} onSignOut={signOut} canWrite={canWrite(tab)} canDelete={me.role === 'admin'} initialOpen={initialOpen} onNavigate={navigate} canAccess={allowed} canCreate={canWrite} onNotify={toast} metrics={{ today, monthOf, allTx, inr, saleBalance, rentalCharges, rentalDeposit, available, saleTotal, itemById, rentalStatus }} />

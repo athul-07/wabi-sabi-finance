@@ -143,13 +143,10 @@ a:focus-visible {
 
 .brand {
   display: flex;
-  align-items: center;
-  gap: 11px;
-  font-family: Fraunces, Georgia, serif;
-  font-size: 25px;
-  font-weight: 500;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
   padding: 0 10px;
-  letter-spacing: -.7px;
 }
 
 .sidebar .brand,
@@ -157,20 +154,28 @@ a:focus-visible {
   color: var(--chrome-ink);
 }
 
-.brand-mark {
-  display: inline-flex;
+.brand-logo {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-width: 260px;
+  object-fit: contain;
+}
+
+:root[data-theme="dark"] .brand-logo,
+.sidebar .brand-logo,
+.topbar .brand-logo {
+  filter: invert(1);
+}
+
+.topbar-heading {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  width: 39px;
-  height: 42px;
-  border-radius: 12px;
-  background: var(--accent);
-  color: var(--on-accent);
-  font-family: Georgia, serif;
-  font-size: 30px;
-  font-style: italic;
-  flex-shrink: 0;
-  padding-bottom: 5px;
+  min-width: 0;
+}
+
+.mobile-brand {
+  display: none;
 }
 
 .brand small {
@@ -1566,7 +1571,8 @@ main {
   padding: 35px 15px;
 }
 
-.login-form>.brand-mark {
+.login-form>.brand-logo {
+  width: 190px;
   margin-bottom: 28px;
 }
 
@@ -1804,6 +1810,15 @@ main {
 
 @media (max-width: 767px) {
   .sidebar {
+    display: none;
+  }
+
+  .mobile-brand {
+    display: block;
+    width: 120px;
+  }
+
+  .topbar .breadcrumb {
     display: none;
   }
 
@@ -2150,25 +2165,9 @@ main {
   100% { opacity: 1; transform: translateY(0); }
 }
 
-.loader-mark {
-  width: 64px;
-  height: 64px;
-  border-radius: 18px;
-  background: var(--accent);
-  color: var(--on-accent);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: 'Fraunces', Georgia, serif;
-  font-size: 30px;
-  font-weight: 600;
-  animation: loader-pulse 1.8s ease-in-out infinite;
-  box-shadow: 0 8px 32px rgba(112, 44, 54, .18);
-}
-
-@keyframes loader-pulse {
-  0%, 100% { transform: scale(1); box-shadow: 0 8px 32px rgba(112, 44, 54, .18); }
-  50%      { transform: scale(1.06); box-shadow: 0 12px 44px rgba(112, 44, 54, .28); }
+.loader-brand .brand-logo {
+  width: 260px;
+  max-width: calc(100vw - 48px);
 }
 
 .loader-text {
