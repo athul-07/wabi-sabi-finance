@@ -6,7 +6,7 @@ import {
   Settings as SettingsIcon, ShieldCheck, Plus, Trash2, Pencil, X, Check, Search,
   LogOut, Cloud, CloudOff, Lock, Sun, Moon, ArrowUpRight, ArrowDownLeft,
   Wallet, TrendingUp, CircleDollarSign, ArrowRight, Sparkles, ChevronRight, Menu,
-  AlertCircle, Info, LoaderCircle, CircleCheck
+  AlertCircle, Info, LoaderCircle, CircleCheck, ListFilter
 } from "lucide-react";
 
 /* ---------------- theme ---------------- */
@@ -164,7 +164,7 @@ function nextId(list, prefix, pad) {
 /* ---------------- ui bits ---------------- */
 function Field({ label, children, hint }) {
   const id = React.useId();
-  return (<div className="block mb-3"><label htmlFor={id} className="block text-sm mb-1" style={{ color: C.ink, fontWeight: 600 }}>{label}</label>{React.Children.map(children, child => React.isValidElement(child) && [TextInput, Select].includes(child.type) ? React.cloneElement(child, { id, 'aria-describedby': hint ? `${id}-hint` : undefined }) : child)}{hint && <span id={`${id}-hint`} className="block text-xs mt-1" style={{ color: C.muted }}>{hint}</span>}</div>);
+  return (<div className="block mb-3"><label htmlFor={id} className="block text-sm mb-1" style={{ color: C.ink, fontWeight: 600 }}>{label}</label>{React.Children.map(children, child => React.isValidElement(child) && [TextInput, Select].includes(child.type) ? React.cloneElement(child, { id, 'aria-describedby': [child.props['aria-describedby'], hint ? `${id}-hint` : ''].filter(Boolean).join(' ') || undefined }) : child)}{hint && <span id={`${id}-hint`} className="block text-xs mt-1" style={{ color: C.muted }}>{hint}</span>}</div>);
 }
 const inputStyle = { border: `1px solid ${C.line}`, borderRadius: 10, padding: "10px 12px", width: "100%", fontSize: 14, color: C.ink, background: C.card, outline: "none" };
 const TextInput = (p) => <input {...p} style={{ ...inputStyle, ...(p.style || {}) }} />;
@@ -224,14 +224,32 @@ function Pill({ children, tone }) {
   return <span className={`pill pill-${tone || 'grey'}`}><i />{children}</span>;
 }
 const statusTone = (s) => ({ Paid: "green", Unpaid: "red", "Partly Paid": "amber", Returned: "green", Overdue: "red", Out: "amber", Booked: "grey", Reserved: "grey" }[s] || "grey");
-function TableWrap({ head, children, empty, emptyText }) {
+function TableWrap({ head, children, empty, emptyText, columnWidths, fitColumns = false, visibleRows }) {
+  const scrollRef = useRef(null);
+  const [scrollHeight, setScrollHeight] = useState(null);
+  React.useLayoutEffect(() => {
+    if (!visibleRows) return;
+    const scroller = scrollRef.current;
+    const table = scroller.querySelector('table');
+    const measure = () => {
+      const rows = [...table.querySelectorAll('tbody > tr')].slice(0, visibleRows);
+      if (!rows.length) { setScrollHeight(null); return; }
+      const bottom = Math.max(...rows.map(row => row.getBoundingClientRect().bottom));
+      setScrollHeight(Math.ceil(bottom - scroller.getBoundingClientRect().top + scroller.scrollTop));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(table);
+    return () => observer.disconnect();
+  }, [visibleRows, children]);
   return (<div className="table-card">
-    <div className="overflow-x-auto"><table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+    <div ref={scrollRef} className="overflow-x-auto" style={scrollHeight ? { maxHeight: scrollHeight } : undefined}><table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14, ...(columnWidths ? { tableLayout: "fixed", minWidth: fitColumns ? 0 : columnWidths.reduce((a, b) => a + b, 0) } : {}) }}>
+      {columnWidths && <colgroup>{columnWidths.map((width, index) => <col key={index} style={{ width: fitColumns ? `${width}%` : width }} />)}</colgroup>}
       <thead><tr>{head.map((h, i) => <th key={i}>{h}</th>)}</tr></thead>
       <tbody>{children}</tbody></table></div>
     {empty && <div className="empty-state"><span className="empty-icon"><ShoppingBag size={25} /></span><strong>{emptyText || 'Nothing here yet'}</strong><p>Your records will appear here once you add them.</p></div>}</div>);
 }
-const Td = ({ children, style }) => <td style={{ padding: "9px 12px", borderTop: `1px solid ${C.line}`, color: C.ink, whiteSpace: "nowrap", ...style }}>{children}</td>;
+const Td = ({ children, style, label, title }) => <td data-label={label} title={title} style={{ padding: "9px 12px", borderTop: `1px solid ${C.line}`, color: C.ink, whiteSpace: "nowrap", ...style }}>{children}</td>;
 function SectionHead({ title, subtitle, action, readonly }) {
   return (<div className="section-head"><div>
     <h2>{title} {readonly && <span style={{ fontFamily: SANS, fontSize: 12 }}><Pill tone="grey">View only</Pill></span>}</h2>
@@ -432,37 +450,102 @@ function RentalsView({ db, update, confirmAction, canWrite, canDelete, initialOp
     </Modal>)}
   </div>);
 }
+function InventoryCategoryFilter({ categories, inventory, value, onChange }) {
+  const popup = useRef(null);
+  const trigger = useRef(null);
+  const popupId = React.useId();
+  const [query, setQuery] = useState("");
+  const [expanded, setExpanded] = useState(false);
+  const options = ["", ...categories].filter(c => !c || c.toLowerCase().includes(query.trim().toLowerCase()));
+  const choose = category => { onChange(category); popup.current.hidePopover(); trigger.current.focus(); };
+  const navigate = e => {
+    const buttons = [...popup.current.querySelectorAll('[role="option"]')];
+    const index = buttons.indexOf(document.activeElement);
+    if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key) && (index >= 0 || ['ArrowDown', 'ArrowUp'].includes(e.key))) {
+      e.preventDefault();
+      const next = e.key === 'Home' ? 0 : e.key === 'End' ? buttons.length - 1 : index < 0 ? (e.key === 'ArrowDown' ? 0 : buttons.length - 1) : (index + (e.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
+      buttons[next]?.focus();
+    }
+  };
+  return <>
+    <button ref={trigger} type="button" className="inventory-heading-filter" data-active={!!value} aria-label="Filter inventory by category" aria-haspopup="dialog" aria-expanded={expanded} popoverTarget={popupId} title={value || 'All categories'} onClick={e => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      Object.assign(popup.current.style, { left: `${Math.max(8, Math.min(rect.left, window.innerWidth - 296))}px`, top: `${Math.max(8, Math.min(rect.bottom + 8, window.innerHeight - 392))}px` });
+    }}><span>Category <ListFilter size={15} /></span></button>
+    <div ref={popup} id={popupId} popover="auto" role="dialog" aria-label="Choose category" className="inventory-category-menu" onKeyDown={navigate} onToggle={e => {
+      const showing = e.newState === 'open'; setExpanded(showing);
+      if (showing) { setQuery(""); popup.current.querySelector('input').focus(); }
+    }}>
+      <div className="category-menu-heading"><span className="category-menu-icon"><ListFilter size={17} /></span><div><strong>Filter by category</strong><p>Choose a collection to view</p></div></div>
+      <div className="category-menu-search"><Search size={15} /><input aria-label="Search categories" value={query} onChange={e => setQuery(e.target.value)} placeholder="Search categories..." /></div>
+      <div className="category-menu-options" role="listbox" aria-label="Categories">
+        {options.map(c => <button type="button" role="option" aria-selected={value === c} key={c} onClick={() => choose(c)}>
+          <span className="category-option-check">{value === c && <Check size={14} />}</span><span className="category-option-name">{c || 'All categories'}</span><span className="category-option-count" aria-hidden="true">{c ? inventory.filter(i => i.category === c).length : inventory.length}</span>
+        </button>)}
+        {options.length === 1 && query.trim() && <p className="category-menu-empty">No matching categories</p>}
+      </div>
+    </div>
+  </>;
+}
+
 function InventoryView({ db, update, confirmAction, canWrite, canDelete }) {
   const [open, setOpen] = useState(false); const [edit, setEdit] = useState(null); const [q, setQ] = useState("");
+  const [idFilter, setIdFilter] = useState("");
+  const idFilterPopup = useRef(null);
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [addingCategory, setAddingCategory] = useState(false);
   const blank = { id: "", name: "", category: "Party wear", purchaseCost: 0, salePrice: 0, discount: 0, rentalPrice: 0, rentalDiscount: 0, deposit: 1500, cleaning: 450, repair: 1000, status: "Available", stockQty: 1, purchaseDate: "" };
   const [form, setForm] = useState(blank);
-  const openNew = () => { setEdit(null); setForm({ ...blank, id: nextId(db.inventory, "WS-", 3) }); setOpen(true); };
-  const openEdit = (i) => { setEdit(i.id); setForm({ ...blank, ...i }); setOpen(true); };
-  const save = async () => { if (!form.name) return; if (edit && !await confirmAction({ kind: 'update', title: 'Update item?', message: `Save changes to item ${edit}?`, confirmLabel: 'Update item' })) return; const next = structuredClone(db); if (edit) next.inventory[next.inventory.findIndex((x) => x.id === edit)] = form; else next.inventory.push(form); if (await update(next)) { setOpen(false); toast(edit ? "Item updated" : "Item added", edit ? 'updated' : 'success'); } };
+  const categories = [...new Set([...PRODUCT_CATS, ...db.inventory.map(i => i.category)].filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const duplicateId = db.inventory.some(i => i.id !== edit && i.id.trim().toLowerCase() === form.id.trim().toLowerCase());
+  const invalidForm = duplicateId || !form.id.trim() || !form.name.trim() || !form.category.trim();
+  const openNew = () => { setEdit(null); setAddingCategory(false); setForm({ ...blank, id: nextId(db.inventory, "WS-", 3) }); setOpen(true); };
+  const openEdit = (i) => { setEdit(i.id); setAddingCategory(false); setForm({ ...blank, ...i }); setOpen(true); };
+  const save = async () => { if (invalidForm) return; if (edit && !await confirmAction({ kind: 'update', title: 'Update item?', message: `Save changes to item ${edit}?`, confirmLabel: 'Update item' })) return; const next = structuredClone(db); const item = { ...form, id: form.id.trim(), category: categories.find(c => c.toLowerCase() === form.category.trim().toLowerCase()) || form.category.trim() }; if (edit) next.inventory[next.inventory.findIndex((x) => x.id === edit)] = item; else next.inventory.push(item); if (await update(next)) { setOpen(false); toast(edit ? "Item updated" : "Item added", edit ? 'updated' : 'success'); } };
   const del = async (id) => { if (!canDelete) return; if (!await confirmAction({ kind: 'delete', title: 'Delete item?', message: `Delete item ${id}? Items used by a sale or rental cannot be removed.`, confirmLabel: 'Delete item' })) return; const next = structuredClone(db); next.inventory = next.inventory.filter((x) => x.id !== id); if (await update(next)) toast("Item deleted", "deleted"); };
-  const rows = db.inventory.filter((i) => (i.name + i.id + i.category).toLowerCase().includes(q.toLowerCase()));
-  const head = ["ID", "Item", "Category", "Sale price", "Sales discount", "Rental", "Rental discount", "Deposit", "Stock", "Available", "Rental status", "Item status"]; if (canWrite) head.push("");
-  return (<div>
+  const filtered = !!(q.trim() || idFilter.trim() || categoryFilter);
+  const rows = db.inventory.filter(i => `${i.name} ${i.id} ${i.category}`.toLowerCase().includes(q.trim().toLowerCase()) && i.id.toLowerCase().includes(idFilter.trim().toLowerCase()) && (!categoryFilter || i.category === categoryFilter));
+  if (filtered) rows.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' }));
+  else rows.reverse();
+  const head = [
+    <button type="button" className="inventory-heading-filter" data-active={!!idFilter.trim()} aria-label="Filter by item ID" aria-haspopup="dialog" popoverTarget="inventory-id-filter-popup" onClick={e => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      Object.assign(idFilterPopup.current.style, { left: `${Math.max(8, Math.min(rect.left, window.innerWidth - 268))}px`, top: `${rect.bottom + 8}px` });
+    }}><span>ID <ListFilter size={15} /></span></button>,
+    "Item",
+    <InventoryCategoryFilter categories={categories} inventory={db.inventory} value={categoryFilter} onChange={setCategoryFilter} />,
+    "Sale price", "Sales discount", "Rental", "Rental discount", "Deposit", "Stock", "Available", "Rental status", "Item status"
+  ]; if (canWrite) head.push("");
+  return (<div className="inventory-view">
     <SectionHead title="Inventory" readonly={!canWrite} subtitle="Your outfits and items. “Available” drops as things are sold or rented out, and returns when a rental comes back."
       action={canWrite ? <Btn kind="gold" onClick={openNew}><Plus size={16} /> Add item</Btn> : null} />
     <PageStats items={[["Collection", `${db.inventory.length} items`, Package], ["Units available", db.inventory.reduce((n, i) => n + available(db, i), 0), ShoppingBag], ["On rental / reserved", db.rentals.filter(r => !r.actualReturn).length, CalendarClock]]} />
-    <div className="mb-3" style={{ maxWidth: 320 }}><div className="flex items-center gap-2 px-3" style={{ border: `1px solid ${C.line}`, borderRadius: 9, background: C.card }}><Search size={16} color={C.muted} /><input className="record-filter-search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search items" style={{ border: "none", outline: "none", padding: "8px 0", width: "100%", fontSize: 14 }} /></div></div>
-    <TableWrap head={head}>
+    <div className="inventory-toolbar">
+      <div className="inventory-search"><Search size={16} aria-hidden="true" /><input className="record-filter-search" aria-label="Search inventory" value={q} onChange={e => setQ(e.target.value)} placeholder="Search items" /></div>
+      <div className="inventory-results"><span>{rows.length} items &middot; {filtered ? 'Item ID ascending' : 'Newest first'}</span>{filtered && <Btn small kind="ghost" onClick={() => { setQ(""); setIdFilter(""); setCategoryFilter(""); }}>Clear filters</Btn>}</div>
+    </div>
+    <div ref={idFilterPopup} id="inventory-id-filter-popup" popover="auto" role="dialog" aria-label="Filter by item ID" className="inventory-filter-popup">
+      <label htmlFor="inventory-id-query">Filter by item ID</label>
+      <input id="inventory-id-query" autoFocus aria-label="Filter inventory by ID" value={idFilter} onChange={e => setIdFilter(e.target.value)} placeholder="Type all or part of an ID" />
+      <button type="button" onClick={() => setIdFilter("")}>Clear ID filter</button>
+    </div>
+    <TableWrap head={head} visibleRows={10} fitColumns columnWidths={[7, canWrite ? 14 : 21, 9, 7, 6, 7, 6, 7, 5, 6, 10, 9, ...(canWrite ? [7] : [])]} empty={!rows.length} emptyText="No matching items">
       {rows.map((i) => {
         const av = available(db, i); const lr = liveRental(db, i.id); const itemStatus = av === 0 ? "Unavailable" : i.status; return (<tr key={i.id}>
-          <Td>{i.id}</Td><Td>{i.name}</Td><Td>{i.category}</Td><Td>{inr(i.salePrice)}</Td><Td>{Number(i.discount || 0)}%</Td><Td>{inr(i.rentalPrice)}</Td><Td>{Number(i.rentalDiscount || 0)}%</Td><Td>{inr(i.deposit)}</Td>
-          <Td>{i.stockQty}</Td><Td><b style={{ color: av === 0 ? C.red : C.green }}>{av}</b></Td>
-          <Td><Pill tone={lr.tone}>{lr.label}</Pill></Td><Td><Pill tone={itemStatus === "Available" ? "green" : itemStatus === "Unavailable" ? "red" : "grey"}>{itemStatus}</Pill></Td>
-          {canWrite && <Td><div className="flex gap-2"><button aria-label="Edit record" onClick={() => openEdit(i)} style={{ color: C.maroon }}><Pencil size={16} /></button>{canDelete && <button aria-label="Delete record" onClick={() => del(i.id)} style={{ color: C.red }}><Trash2 size={16} /></button>}</div></Td>}
+          <Td label="ID" title={i.id}>{i.id}</Td><Td label="Item" title={i.name}><span className="inventory-cell-text">{i.name}</span></Td><Td label="Category" title={i.category}><span className="inventory-cell-text">{i.category}</span></Td><Td label="Sale price">{inr(i.salePrice)}</Td><Td label="Sales discount">{Number(i.discount || 0)}%</Td><Td label="Rental">{inr(i.rentalPrice)}</Td><Td label="Rental discount">{Number(i.rentalDiscount || 0)}%</Td><Td label="Deposit">{inr(i.deposit)}</Td>
+          <Td label="Stock">{i.stockQty}</Td><Td label="Available"><b style={{ color: av === 0 ? C.red : C.green }}>{av}</b></Td>
+          <Td label="Rental status"><Pill tone={lr.tone}>{lr.label}</Pill></Td><Td label="Item status"><Pill tone={itemStatus === "Available" ? "green" : itemStatus === "Unavailable" ? "red" : "grey"}>{itemStatus}</Pill></Td>
+          {canWrite && <Td label="Actions"><div className="inventory-row-actions"><button aria-label="Edit record" onClick={() => openEdit(i)} style={{ color: C.maroon }}><Pencil size={16} /></button>{canDelete && <button aria-label="Delete record" onClick={() => del(i.id)} style={{ color: C.red }}><Trash2 size={16} /></button>}</div></Td>}
         </tr>);
       })}
     </TableWrap>
     {open && canWrite && (<Modal title={edit ? "Edit item" : "Add item"} onClose={() => setOpen(false)} wide>
       <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 2fr 1fr" }}>
-        <Field label="Item ID"><TextInput value={form.id} onChange={(e) => setForm({ ...form, id: e.target.value })} /></Field>
+        <Field label="Item ID"><TextInput list="inventory-item-ids" autoComplete="off" value={form.id} aria-invalid={duplicateId} aria-describedby={duplicateId ? 'inventory-id-error' : undefined} onChange={(e) => setForm({ ...form, id: e.target.value })} /><datalist id="inventory-item-ids">{db.inventory.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}</datalist>{duplicateId && <span id="inventory-id-error" role="alert" style={{ color: C.red, fontSize: 12 }}>ID already exists</span>}</Field>
         <Field label="Item / outfit"><TextInput value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
-        <Field label="Category"><Select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>{PRODUCT_CATS.map((c) => <option key={c}>{c}</option>)}</Select></Field>
+        <Field label="Category"><Select value={addingCategory ? '__add_category__' : form.category} onChange={(e) => { const adding = e.target.value === '__add_category__'; setAddingCategory(adding); setForm({ ...form, category: adding ? '' : e.target.value }); }}>{categories.map((c) => <option key={c}>{c}</option>)}<option value="__add_category__">+ Add another category</option></Select></Field>
       </div>
+      {addingCategory && <Field label="New category" hint="Saved with this item and available for future entries."><TextInput value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} placeholder="Enter category name" /></Field>}
       <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
         <Field label="Purchase cost"><TextInput type="number" value={form.purchaseCost} onChange={(e) => setForm({ ...form, purchaseCost: e.target.value })} /></Field>
         <Field label="Sale price"><TextInput type="number" value={form.salePrice} onChange={(e) => setForm({ ...form, salePrice: e.target.value })} /></Field>
@@ -482,7 +565,7 @@ function InventoryView({ db, update, confirmAction, canWrite, canDelete }) {
         <Field label="Status"><Select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>{ITEM_STATUSES.map((s) => <option key={s}>{s}</option>)}</Select></Field>
         <Field label="Purchase date"><TextInput type="date" value={form.purchaseDate} onChange={(e) => setForm({ ...form, purchaseDate: e.target.value })} /></Field>
       </div>
-      <div className="flex justify-end gap-2 mt-2"><Btn kind="ghost" onClick={() => setOpen(false)}>Cancel</Btn><Btn onClick={save}><Check size={16} /> Save item</Btn></div>
+      <div className="flex justify-end gap-2 mt-2"><Btn kind="ghost" onClick={() => setOpen(false)}>Cancel</Btn><Btn onClick={save} disabled={invalidForm}><Check size={16} /> Save item</Btn></div>
     </Modal>)}
   </div>);
 }

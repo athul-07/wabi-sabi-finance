@@ -209,6 +209,68 @@ test('staff can add and edit records but only admins can delete in every section
   }
 });
 
+test('browser: inventory ordering, filters, categories and immediate duplicate IDs', { timeout: 60000 }, async () => {
+  const browser = await chromium.launch({ headless: true, ...(process.platform === 'win32' ? { channel: 'msedge' } : {}) });
+  const original = (await request('/data')).data;
+  try {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+    await page.goto(base);
+    await page.getByLabel('Username').fill('admin');
+    await page.getByLabel('Password', { exact: true }).fill('owner-test-password');
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await page.getByRole('button', { name: 'Inventory', exact: true }).click();
+    await expect(page.locator('tbody tr').first().locator('td').first()).toHaveText(original.data.inventory.at(-1).id);
+    for (const id of ['TEST-2', 'TEST-10']) {
+      await page.getByRole('button', { name: 'Add item', exact: true }).click();
+      await page.getByLabel('Item / outfit').fill('Filter test outfit');
+      await page.getByLabel('Item ID', { exact: true }).fill(' ws-001 ');
+      await expect(page.getByRole('alert')).toHaveText('ID already exists');
+      await expect(page.getByRole('button', { name: 'Save item' })).toBeDisabled();
+      await expect(page.getByLabel('Item ID', { exact: true })).toHaveAttribute('aria-describedby', 'inventory-id-error');
+      assert.ok(await page.locator('#inventory-item-ids option[value="WS-001"]').count());
+      await page.getByLabel('Item ID', { exact: true }).fill(id);
+      await expect(page.getByRole('alert')).toHaveCount(0);
+      if (id === 'TEST-2') {
+        await page.getByLabel('Category', { exact: true }).selectOption('__add_category__');
+        await expect(page.getByRole('button', { name: 'Save item' })).toBeDisabled();
+        await page.getByLabel('New category', { exact: true }).fill('Festival collection');
+      } else {
+        await page.getByLabel('Category', { exact: true }).selectOption('Festival collection');
+      }
+      await page.getByRole('button', { name: 'Save item' }).click();
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+      await expect(page.locator('tbody tr').first().locator('td').first()).toHaveText(id);
+    }
+    await page.reload();
+    await page.getByRole('button', { name: 'Inventory', exact: true }).click();
+    await expect(page.locator('tbody tr').first().locator('td').first()).toHaveText('TEST-10');
+    const columnWidths = await page.locator('thead th').evaluateAll(cells => cells.map(cell => cell.getBoundingClientRect().width));
+    const rowHeight = await page.locator('tbody tr').first().evaluate(row => row.getBoundingClientRect().height);
+    await page.getByRole('button', { name: 'Filter inventory by category' }).click();
+    await page.getByLabel('Search categories').fill('Festival');
+    await page.getByRole('option', { name: 'Festival collection', exact: true }).click();
+    assert.deepEqual(await page.locator('thead th').evaluateAll(cells => cells.map(cell => cell.getBoundingClientRect().width)), columnWidths);
+    assert.equal(await page.locator('tbody tr').first().evaluate(row => row.getBoundingClientRect().height), rowHeight);
+    await expect(page.locator('tbody tr td:first-child')).toHaveText(['TEST-2', 'TEST-10']);
+    await page.getByRole('button', { name: 'Filter by item ID', exact: true }).click();
+    await page.getByLabel('Filter inventory by ID', { exact: true }).fill('test-10');
+    await expect(page.locator('tbody tr td:first-child')).toHaveText(['TEST-10']);
+    await page.getByLabel('Filter inventory by ID', { exact: true }).fill('missing');
+    await expect(page.getByText('No matching items', { exact: true })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'Clear filters' }).click();
+    await expect(page.locator('tbody tr').first().locator('td').first()).toHaveText('TEST-10');
+    await page.locator('tbody tr').first().getByRole('button', { name: 'Edit record' }).click();
+    await expect(page.getByRole('button', { name: 'Save item' })).toBeEnabled();
+    await page.getByLabel('Item ID', { exact: true }).fill('TEST-2');
+    await expect(page.getByRole('alert')).toHaveText('ID already exists');
+  } finally {
+    await browser.close();
+    const latest = (await request('/data')).data;
+    assert.equal((await request('/data', 'PUT', { data: original.data, baseData: latest.data, baseVersion: latest.version })).status, 200);
+  }
+});
+
 test('browser: sales, customer reuse, ledger, rentals, return, persistence, and mobile layout', { timeout: 90000 }, async () => {
   const browser = await chromium.launch({ headless: true, ...(process.platform === 'win32' ? { channel: 'msedge' } : {}) });
   try {
