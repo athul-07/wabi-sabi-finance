@@ -6,7 +6,7 @@ import {
   Settings as SettingsIcon, ShieldCheck, Plus, Trash2, Pencil, X, Check, Search,
   LogOut, Cloud, CloudOff, Lock, Sun, Moon, ArrowUpRight, ArrowDownLeft,
   Wallet, TrendingUp, CircleDollarSign, ArrowRight, Sparkles, ChevronRight, Menu,
-  AlertCircle, Info, LoaderCircle, CircleCheck, ListFilter
+  AlertCircle, Info, LoaderCircle, CircleCheck, ListFilter, ChevronDown
 } from "lucide-react";
 
 /* ---------------- theme ---------------- */
@@ -168,7 +168,145 @@ function Field({ label, children, hint }) {
 }
 const inputStyle = { border: `1px solid ${C.line}`, borderRadius: 10, padding: "10px 12px", width: "100%", fontSize: 14, color: C.ink, background: C.card, outline: "none" };
 const TextInput = (p) => <input {...p} style={{ ...inputStyle, ...(p.style || {}) }} />;
-const Select = ({ children, ...p }) => <select {...p} style={{ ...inputStyle, ...(p.style || {}) }}>{children}</select>;
+function Select({ children, value, onChange, style, className = '', id, disabled, icon: Icon, 'aria-label': ariaLabel, 'aria-describedby': ariaDescribedBy, ...rest }) {
+  const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const wrapRef = useRef(null);
+  const listRef = useRef(null);
+  const selectRef = useRef(null);
+
+  const options = [];
+  React.Children.forEach(children, child => {
+    if (!React.isValidElement(child)) return;
+    if (child.type === 'option') {
+      const val = child.props.value !== undefined ? child.props.value : child.props.children;
+      const text = child.props.children !== undefined ? String(child.props.children) : String(val);
+      options.push({ value: String(val ?? ''), label: text, rawValue: val });
+    }
+  });
+
+  const selectedOpt = options.find(o => String(o.value) === String(value ?? ''));
+  const selectedLabel = selectedOpt ? selectedOpt.label : (options[0]?.label || '');
+
+  useEffect(() => {
+    if (!open) return;
+    const handleOutside = e => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [open]);
+
+  useEffect(() => {
+    if (open && activeIndex >= 0 && listRef.current) {
+      const item = listRef.current.children[activeIndex];
+      if (item) item.scrollIntoView({ block: 'nearest' });
+    }
+  }, [activeIndex, open]);
+
+  const choose = opt => {
+    if (disabled) return;
+    if (selectRef.current) {
+      selectRef.current.value = opt.value;
+    }
+    if (onChange) {
+      onChange({ target: { value: opt.rawValue, name: rest.name, id } });
+    }
+    setOpen(false);
+  };
+
+  const handleKeyDown = e => {
+    if (disabled) return;
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      setOpen(false);
+      return;
+    }
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      if (!open) {
+        setOpen(true);
+        setActiveIndex(options.findIndex(o => String(o.value) === String(value ?? '')));
+      } else if (activeIndex >= 0 && options[activeIndex]) {
+        choose(options[activeIndex]);
+      }
+      return;
+    }
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && open) {
+      e.preventDefault();
+      setActiveIndex(i => (i + (e.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length);
+    }
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && !open) {
+      e.preventDefault();
+      setOpen(true);
+      setActiveIndex(options.findIndex(o => String(o.value) === String(value ?? '')));
+    }
+  };
+
+  const triggerCls = `cat-dropdown-trigger${open ? ' cat-dropdown-open' : ''}${value ? ' cat-dropdown-active' : ''}${disabled ? ' disabled' : ''}`;
+  const chevronCls = `cat-dropdown-chevron${open ? ' cat-chevron-up' : ''}`;
+
+  return (
+    <div className={`cat-dropdown ${className}`.trim()} ref={wrapRef} style={style}>
+      <select
+        ref={selectRef}
+        id={id}
+        aria-label={ariaLabel}
+        aria-describedby={ariaDescribedBy}
+        value={value ?? ''}
+        onChange={onChange}
+        disabled={disabled}
+        tabIndex={-1}
+        style={{ position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, overflow: 'hidden', clip: 'rect(0, 0, 0, 0)', whiteSpace: 'nowrap', border: 0 }}
+        {...rest}
+      >
+        {children}
+      </select>
+      <button
+        type="button"
+        id={id ? `${id}-btn` : undefined}
+        className={triggerCls}
+        title={selectedLabel}
+        disabled={disabled}
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        onClick={() => {
+          if (disabled) return;
+          setOpen(!open);
+          if (!open) setActiveIndex(options.findIndex(o => String(o.value) === String(value ?? '')));
+        }}
+        onKeyDown={handleKeyDown}
+      >
+        {Icon && <Icon size={15} aria-hidden="true" />}
+        <span className="cat-dropdown-label">{selectedLabel}</span>
+        <ChevronDown size={14} className={chevronCls} />
+      </button>
+      {open && (
+        <div className="cat-dropdown-menu" ref={listRef} role="listbox" aria-label={ariaLabel || selectedLabel}>
+          {options.map((opt, idx) => {
+            const isSelected = String(opt.value) === String(value ?? '');
+            const optCls = `cat-dropdown-option${isSelected ? ' cat-option-selected' : ''}${idx === activeIndex ? ' cat-option-active' : ''}`;
+            return (
+              <button
+                key={opt.value + '_' + idx}
+                type="button"
+                role="option"
+                aria-selected={isSelected}
+                className={optCls}
+                onMouseEnter={() => setActiveIndex(idx)}
+                onMouseDown={e => e.preventDefault()}
+                onClick={() => choose(opt)}
+              >
+                <span>{opt.label}</span>
+                {isSelected && <Check size={14} className="cat-option-check" />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 function Modal({ title, onClose, children, wide }) {
   const dialogRef = useRef(null);
   const closeRef = useRef(onClose);
@@ -313,7 +451,7 @@ function RecordFilters({ search, setSearch, searchLabel, status, setStatus, stat
       <Search size={16} color={C.muted} />
       <input className="record-filter-search" aria-label={searchLabel} value={search} onChange={(e) => setSearch(e.target.value)} placeholder={searchLabel} style={{ border: "none", outline: "none", padding: "9px 0", width: "100%", minWidth: 0, fontSize: 14 }} />
     </label>
-    <Select aria-label={statusLabel} value={status} onChange={(e) => setStatus(e.target.value)} style={{ width: "auto", minWidth: 180 }}>
+    <Select icon={ListFilter} aria-label={statusLabel} value={status} onChange={(e) => setStatus(e.target.value)} style={{ width: "auto", minWidth: 180 }}>
       <option value="">All statuses</option>{statuses.map((value) => <option key={value} value={value}>{value}</option>)}
     </Select>
   </div>);
@@ -450,48 +588,17 @@ function RentalsView({ db, update, confirmAction, canWrite, canDelete, initialOp
     </Modal>)}
   </div>);
 }
-function InventoryCategoryFilter({ categories, inventory, value, onChange }) {
-  const popup = useRef(null);
-  const trigger = useRef(null);
-  const popupId = React.useId();
-  const [query, setQuery] = useState("");
-  const [expanded, setExpanded] = useState(false);
-  const options = ["", ...categories].filter(c => !c || c.toLowerCase().includes(query.trim().toLowerCase()));
-  const choose = category => { onChange(category); popup.current.hidePopover(); trigger.current.focus(); };
-  const navigate = e => {
-    const buttons = [...popup.current.querySelectorAll('[role="option"]')];
-    const index = buttons.indexOf(document.activeElement);
-    if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key) && (index >= 0 || ['ArrowDown', 'ArrowUp'].includes(e.key))) {
-      e.preventDefault();
-      const next = e.key === 'Home' ? 0 : e.key === 'End' ? buttons.length - 1 : index < 0 ? (e.key === 'ArrowDown' ? 0 : buttons.length - 1) : (index + (e.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
-      buttons[next]?.focus();
-    }
-  };
-  return <>
-    <button ref={trigger} type="button" className="inventory-heading-filter" data-active={!!value} aria-label="Filter inventory by category" aria-haspopup="dialog" aria-expanded={expanded} popoverTarget={popupId} title={value || 'All categories'} onClick={e => {
-      const rect = e.currentTarget.getBoundingClientRect();
-      Object.assign(popup.current.style, { left: `${Math.max(8, Math.min(rect.left, window.innerWidth - 296))}px`, top: `${Math.max(8, Math.min(rect.bottom + 8, window.innerHeight - 392))}px` });
-    }}><span>Category <ListFilter size={15} /></span></button>
-    <div ref={popup} id={popupId} popover="auto" role="dialog" aria-label="Choose category" className="inventory-category-menu" onKeyDown={navigate} onToggle={e => {
-      const showing = e.newState === 'open'; setExpanded(showing);
-      if (showing) { setQuery(""); popup.current.querySelector('input').focus(); }
-    }}>
-      <div className="category-menu-heading"><span className="category-menu-icon"><ListFilter size={17} /></span><div><strong>Filter by category</strong><p>Choose a collection to view</p></div></div>
-      <div className="category-menu-search"><Search size={15} /><input aria-label="Search categories" value={query} onChange={e => setQuery(e.target.value)} placeholder="Search categories..." /></div>
-      <div className="category-menu-options" role="listbox" aria-label="Categories">
-        {options.map(c => <button type="button" role="option" aria-selected={value === c} key={c} onClick={() => choose(c)}>
-          <span className="category-option-check">{value === c && <Check size={14} />}</span><span className="category-option-name">{c || 'All categories'}</span><span className="category-option-count" aria-hidden="true">{c ? inventory.filter(i => i.category === c).length : inventory.length}</span>
-        </button>)}
-        {options.length === 1 && query.trim() && <p className="category-menu-empty">No matching categories</p>}
-      </div>
-    </div>
-  </>;
+function CategoryDropdown({ value, onChange, categories, label }) {
+  return (
+    <Select icon={Package} aria-label={label} value={value} onChange={e => onChange(e.target.value)} style={{ width: 'auto', minWidth: 180 }}>
+      <option value="">All categories</option>
+      {categories.map(c => <option key={c} value={c}>{c}</option>)}
+    </Select>
+  );
 }
-
 function InventoryView({ db, update, confirmAction, canWrite, canDelete }) {
   const [open, setOpen] = useState(false); const [edit, setEdit] = useState(null); const [q, setQ] = useState("");
   const [idFilter, setIdFilter] = useState("");
-  const idFilterPopup = useRef(null);
   const [categoryFilter, setCategoryFilter] = useState("");
   const [addingCategory, setAddingCategory] = useState(false);
   const blank = { id: "", name: "", category: "Party wear", purchaseCost: 0, salePrice: 0, discount: 0, rentalPrice: 0, rentalDiscount: 0, deposit: 1500, cleaning: 450, repair: 1000, status: "Available", stockQty: 1, purchaseDate: "" };
@@ -507,27 +614,16 @@ function InventoryView({ db, update, confirmAction, canWrite, canDelete }) {
   const rows = db.inventory.filter(i => `${i.name} ${i.id} ${i.category}`.toLowerCase().includes(q.trim().toLowerCase()) && i.id.toLowerCase().includes(idFilter.trim().toLowerCase()) && (!categoryFilter || i.category === categoryFilter));
   if (filtered) rows.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' }));
   else rows.reverse();
-  const head = [
-    <button type="button" className="inventory-heading-filter" data-active={!!idFilter.trim()} aria-label="Filter by item ID" aria-haspopup="dialog" popoverTarget="inventory-id-filter-popup" onClick={e => {
-      const rect = e.currentTarget.getBoundingClientRect();
-      Object.assign(idFilterPopup.current.style, { left: `${Math.max(8, Math.min(rect.left, window.innerWidth - 268))}px`, top: `${rect.bottom + 8}px` });
-    }}><span>ID <ListFilter size={15} /></span></button>,
-    "Item",
-    <InventoryCategoryFilter categories={categories} inventory={db.inventory} value={categoryFilter} onChange={setCategoryFilter} />,
-    "Sale price", "Sales discount", "Rental", "Rental discount", "Deposit", "Stock", "Available", "Rental status", "Item status"
-  ]; if (canWrite) head.push("");
+  const head = ["ID", "Item", "Category", "Sale price", "Sales discount", "Rental", "Rental discount", "Deposit", "Stock", "Available", "Rental status", "Item status"]; if (canWrite) head.push("");
   return (<div className="inventory-view">
     <SectionHead title="Inventory" readonly={!canWrite} subtitle="Your outfits and items. “Available” drops as things are sold or rented out, and returns when a rental comes back."
       action={canWrite ? <Btn kind="gold" onClick={openNew}><Plus size={16} /> Add item</Btn> : null} />
     <PageStats items={[["Collection", `${db.inventory.length} items`, Package], ["Units available", db.inventory.reduce((n, i) => n + available(db, i), 0), ShoppingBag], ["On rental / reserved", db.rentals.filter(r => !r.actualReturn).length, CalendarClock]]} />
     <div className="inventory-toolbar">
-      <div className="inventory-search"><Search size={16} aria-hidden="true" /><input className="record-filter-search" aria-label="Search inventory" value={q} onChange={e => setQ(e.target.value)} placeholder="Search items" /></div>
+      <div className="inventory-search"><Search size={16} aria-hidden="true" /><input className="record-filter-search" aria-label="Search inventory" value={q} onChange={e => setQ(e.target.value)} placeholder="Search items" />{q && <button className="filter-clear-btn" type="button" aria-label="Clear search" onClick={() => setQ("")}><X size={14} /></button>}</div>
+      <div className="inventory-search id-filter-search"><ListFilter size={16} aria-hidden="true" /><input className="record-filter-search" aria-label="Filter inventory by ID" value={idFilter} onChange={e => setIdFilter(e.target.value)} placeholder="Filter by ID" />{idFilter && <button className="filter-clear-btn" type="button" aria-label="Clear ID filter" onClick={() => setIdFilter("")}><X size={14} /></button>}</div>
+      <CategoryDropdown value={categoryFilter} onChange={setCategoryFilter} categories={categories} label="Filter inventory by category" />
       <div className="inventory-results"><span>{rows.length} items &middot; {filtered ? 'Item ID ascending' : 'Newest first'}</span>{filtered && <Btn small kind="ghost" onClick={() => { setQ(""); setIdFilter(""); setCategoryFilter(""); }}>Clear filters</Btn>}</div>
-    </div>
-    <div ref={idFilterPopup} id="inventory-id-filter-popup" popover="auto" role="dialog" aria-label="Filter by item ID" className="inventory-filter-popup">
-      <label htmlFor="inventory-id-query">Filter by item ID</label>
-      <input id="inventory-id-query" autoFocus aria-label="Filter inventory by ID" value={idFilter} onChange={e => setIdFilter(e.target.value)} placeholder="Type all or part of an ID" />
-      <button type="button" onClick={() => setIdFilter("")}>Clear ID filter</button>
     </div>
     <TableWrap head={head} visibleRows={10} fitColumns columnWidths={[7, canWrite ? 14 : 21, 9, 7, 6, 7, 6, 7, 5, 6, 10, 9, ...(canWrite ? [7] : [])]} empty={!rows.length} emptyText="No matching items">
       {rows.map((i) => {
