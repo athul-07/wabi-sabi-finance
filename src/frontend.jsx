@@ -362,7 +362,7 @@ function Pill({ children, tone }) {
   return <span className={`pill pill-${tone || 'grey'}`}><i />{children}</span>;
 }
 const statusTone = (s) => ({ Paid: "green", Unpaid: "red", "Partly Paid": "amber", Returned: "green", Overdue: "red", Out: "amber", Booked: "grey", Reserved: "grey" }[s] || "grey");
-function TableWrap({ head, children, empty, emptyText, columnWidths, fitColumns = false, visibleRows }) {
+function TableWrap({ head, children, empty, emptyText, columnWidths, fitColumns = false, minWidth, visibleRows }) {
   const scrollRef = useRef(null);
   const [scrollHeight, setScrollHeight] = useState(null);
   React.useLayoutEffect(() => {
@@ -381,8 +381,8 @@ function TableWrap({ head, children, empty, emptyText, columnWidths, fitColumns 
     return () => observer.disconnect();
   }, [visibleRows, children]);
   return (<div className="table-card">
-    <div ref={scrollRef} className="overflow-x-auto" style={scrollHeight ? { maxHeight: scrollHeight } : undefined}><table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14, ...(columnWidths ? { tableLayout: "fixed", minWidth: fitColumns ? 0 : columnWidths.reduce((a, b) => a + b, 0) } : {}) }}>
-      {columnWidths && <colgroup>{columnWidths.map((width, index) => <col key={index} style={{ width: fitColumns ? `${width}%` : width }} />)}</colgroup>}
+    <div ref={scrollRef} className="overflow-x-auto" style={scrollHeight ? { maxHeight: scrollHeight } : undefined}><table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14, ...(columnWidths ? { tableLayout: "fixed", minWidth: minWidth ?? (columnWidths ? (columnWidths.reduce((a, b) => a + b, 0) <= 100 ? 1220 : Math.max(columnWidths.reduce((a, b) => a + b, 0), 1180)) : undefined) } : (minWidth ? { minWidth } : {})) }}>
+      {columnWidths && <colgroup>{columnWidths.map((width, index) => <col key={index} style={{ width: (columnWidths.reduce((a, b) => a + b, 0) <= 100) ? `${width}%` : (typeof width === 'number' ? `${width}px` : width) }} />)}</colgroup>}
       <thead><tr>{head.map((h, i) => <th key={i}>{h}</th>)}</tr></thead>
       <tbody>{children}</tbody></table></div>
     {empty && <div className="empty-state"><span className="empty-icon"><ShoppingBag size={25} /></span><strong>{emptyText || 'Nothing here yet'}</strong><p>Your records will appear here once you add them.</p></div>}</div>);
@@ -446,7 +446,7 @@ function ItemPicker({ db, value, onChange, label = "Item" }) {
   </Field>);
 }
 function RecordFilters({ search, setSearch, searchLabel, status, setStatus, statusLabel, statuses }) {
-  return (<div className="flex items-center gap-3 mb-3" style={{ flexWrap: "wrap" }}>
+  return (<div className="flex items-center gap-3 mb-3 record-filters" style={{ flexWrap: "wrap" }}>
     <label className="flex items-center gap-2 px-3" style={{ flex: "1 1 250px", maxWidth: 420, minWidth: 0, border: `1px solid ${C.line}`, borderRadius: 9, background: C.card }}>
       <Search size={16} color={C.muted} />
       <input className="record-filter-search" aria-label={searchLabel} value={search} onChange={(e) => setSearch(e.target.value)} placeholder={searchLabel} style={{ border: "none", outline: "none", padding: "9px 0", width: "100%", minWidth: 0, fontSize: 14 }} />
@@ -625,7 +625,7 @@ function InventoryView({ db, update, confirmAction, canWrite, canDelete }) {
       <CategoryDropdown value={categoryFilter} onChange={setCategoryFilter} categories={categories} label="Filter inventory by category" />
       <div className="inventory-results"><span>{rows.length} items &middot; {filtered ? 'Item ID ascending' : 'Newest first'}</span>{filtered && <Btn small kind="ghost" onClick={() => { setQ(""); setIdFilter(""); setCategoryFilter(""); }}>Clear filters</Btn>}</div>
     </div>
-    <TableWrap head={head} visibleRows={10} fitColumns columnWidths={[7, canWrite ? 14 : 21, 9, 7, 6, 7, 6, 7, 5, 6, 10, 9, ...(canWrite ? [7] : [])]} empty={!rows.length} emptyText="No matching items">
+    <TableWrap head={head} visibleRows={10} columnWidths={[85, canWrite ? 180 : 220, 125, 95, 105, 90, 105, 90, 65, 75, 115, 115, ...(canWrite ? [75] : [])]} empty={!rows.length} emptyText="No matching items">
       {rows.map((i) => {
         const av = available(db, i); const lr = liveRental(db, i.id); const itemStatus = av === 0 ? "Unavailable" : i.status; return (<tr key={i.id}>
           <Td label="ID" title={i.id}>{i.id}</Td><Td label="Item" title={i.name}><span className="inventory-cell-text">{i.name}</span></Td><Td label="Category" title={i.category}><span className="inventory-cell-text">{i.category}</span></Td><Td label="Sale price">{inr(i.salePrice)}</Td><Td label="Sales discount">{Number(i.discount || 0)}%</Td><Td label="Rental">{inr(i.rentalPrice)}</Td><Td label="Rental discount">{Number(i.rentalDiscount || 0)}%</Td><Td label="Deposit">{inr(i.deposit)}</Td>

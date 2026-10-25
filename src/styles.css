@@ -1277,6 +1277,11 @@ main {
   color: var(--muted);
 }
 
+.table-card > .overflow-x-auto,
+.overflow-x-auto {
+  -webkit-overflow-scrolling: touch;
+}
+
 .table-card {
   background: var(--surface);
   border: 1px solid var(--line);
@@ -1287,7 +1292,7 @@ main {
 
 .page-stats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
   gap: 16px;
   margin-bottom: 25px;
 }
@@ -1317,16 +1322,20 @@ main {
 
 @media (max-width: 767px) {
   .page-stats {
-    gap: 9px;
+    gap: 10px;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
   }
 
   .page-stats>div {
-    padding: 13px;
-    display: block;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
   }
 
   .page-stats .metric-icon {
-    margin-bottom: 9px;
+    margin-bottom: 0;
+    flex-shrink: 0;
   }
 
   .page-stats strong {
@@ -1541,6 +1550,7 @@ main {
   width: 100%;
   min-width: 210px;
   max-height: 270px;
+  max-width: calc(100vw - 32px);
   overflow-y: auto;
   overscroll-behavior: contain;
   background: var(--surface);
@@ -1631,6 +1641,7 @@ main {
   scrollbar-width: thin;
   scrollbar-color: var(--muted) var(--surface-soft);
   overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 .inventory-view .table-card thead {
   position: sticky;
@@ -1638,17 +1649,75 @@ main {
   z-index: 2;
   background: var(--chrome);
 }
+.inventory-view .table-card th,
+.inventory-view .table-card td {
+  padding: 12px 10px !important;
+}
 .inventory-view .table-card tbody tr { height: var(--inventory-row-height); }
 .inventory-view .table-card td { height: var(--inventory-row-height); }
-.inventory-view .id-filter-search { flex: 0 1 140px; max-width: 150px; }
+.inventory-cell-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inventory-view .id-filter-search { flex: 0 1 150px; max-width: 160px; }
 .inventory-view .inventory-search { flex: 1 1 250px; max-width: 420px; }
 .inventory-view .inventory-results { margin-left: auto; }
 @media (max-width: 767px) {
-  .inventory-view .inventory-toolbar { align-items: stretch; }
-  .inventory-view .inventory-search { flex: 1 1 100%; max-width: none; }
-  .inventory-view .id-filter-search { flex: 1 1 140px; min-width: 0; }
-  .inventory-view .cat-dropdown { flex: 1 1 180px; min-width: 0; }
-  .inventory-view .inventory-results { margin-left: 0; }
+  .inventory-view .inventory-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 12px;
+  }
+  .inventory-view .inventory-search {
+    flex: 1 1 100%;
+    max-width: none;
+    width: 100%;
+  }
+  .inventory-view .id-filter-search {
+    flex: 1 1 100%;
+    max-width: none;
+    width: 100%;
+  }
+  .inventory-view .cat-dropdown {
+    flex: 1 1 100%;
+    max-width: none;
+    width: 100%;
+  }
+  .inventory-view .inventory-results {
+    margin-left: 0;
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 6px;
+    border-top: 1px solid var(--line);
+  }
+  .inventory-view .table-card th,
+  .inventory-view .table-card td {
+    padding: 10px 8px !important;
+  }
+}
+@media (min-width: 480px) and (max-width: 767px) {
+  .inventory-view .inventory-toolbar {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .inventory-view .inventory-search:first-child {
+    grid-column: 1 / -1;
+  }
+  .inventory-view .id-filter-search {
+    grid-column: 1;
+  }
+  .inventory-view .cat-dropdown {
+    grid-column: 2;
+  }
+  .inventory-view .inventory-results {
+    grid-column: 1 / -1;
+  }
 }
 
 .inventory-row-actions { display: flex; align-items: center; gap: 4px; }
@@ -2041,6 +2110,11 @@ main {
 }
 
 @media (max-width: 1000px) {
+  .table-card th,
+  .table-card td {
+    padding: 12px 10px !important;
+  }
+
   .metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2236,7 +2310,19 @@ main {
 
   .table-card th,
   .table-card td {
-    padding: 13px !important;
+    padding: 10px 10px !important;
+  }
+
+  .record-filters {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .record-filters > label,
+  .record-filters > .cat-dropdown {
+    flex: 1 1 100% !important;
+    max-width: 100% !important;
+    width: 100% !important;
   }
 }
 
