@@ -44,13 +44,14 @@ test('Postgres schema creates trusted profiles atomically, protects data and che
     assert.deepEqual(backfilled.data.sales, shopData.sales);
     assert.deepEqual(backfilled.data.rentals, shopData.rentals.map(row => ({ ...row, discount: 0 })));
     assert.deepEqual(backfilled.data.transactions, shopData.transactions);
-    const saved = { data: { ...shopData, inventory: [{ ...shopData.inventory[0], salePrice: 9999, discount: 12, rentalDiscount: 25 }], rentals: shopData.rentals.map(row => ({ ...row, discount: 30 })), customers: [] }, version: 2, updatedAt: '2026-09-26T10:00:00.000Z', updatedBy: 'owner' };
+    const saved = { data: { ...shopData, inventory: [{ ...shopData.inventory[0], salePrice: 9999, discount: 12, rentalDiscount: 25, extraDayCharge: 250 }], rentals: shopData.rentals.map(row => ({ ...row, discount: 30 })), customers: [] }, version: 2, updatedAt: '2026-09-26T10:00:00.000Z', updatedBy: 'owner' };
     assert.equal((await db.query('select wabi_save_shop($1::jsonb, $2::integer) as saved', [saved, 1])).rows[0].saved, true);
     assert.equal(Number((await db.query('select sale_price from wabi_inventory where id = $1', [seed.inventory[0].id])).rows[0].sale_price), 9999);
     assert.equal(Number((await db.query('select discount from wabi_inventory where id = $1', [seed.inventory[0].id])).rows[0].discount), 12);
     assert.equal(Number((await db.query('select rental_discount from wabi_inventory where id = $1', [seed.inventory[0].id])).rows[0].rental_discount), 25);
     const roundTrip = (await db.query('select wabi_get_shop() as shop')).rows[0].shop;
     assert.equal(roundTrip.data.inventory[0].rentalDiscount, 25);
+    assert.equal(roundTrip.data.inventory[0].extraDayCharge, 250);
     assert.equal(roundTrip.data.rentals[0].discount, 30);
     assert.equal((await db.query('select count(*)::int as n from wabi_inventory where is_active')).rows[0].n, 1);
     assert.equal((await db.query('select count(*)::int as n from wabi_customers where is_active')).rows[0].n, 0);

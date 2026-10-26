@@ -125,8 +125,13 @@ function rentalStatus(r) {
   if (r.pickup && t >= r.pickup) return "Out";
   return "Booked";
 }
-function rentalLateFee(db, r) { if (!r.returnDue || !r.actualReturn) return 0; return Math.max(0, daysBetween(r.returnDue, r.actualReturn)) * (+db.settings.lateFeePerDay || 0); }
-function rentalCharges(db, r) { const item = itemById(db, r.itemId) || {}; const fee = r.rentalFee === "" || r.rentalFee == null ? +item.rentalPrice || 0 : +r.rentalFee; return fee * (1 - (+r.discount || 0) / 100) + rentalDeposit(db, r) + rentalLateFee(db, r); }
+function rentalLateFee(db, r) {
+  if (!r.returnDue || !r.actualReturn) return 0;
+  const extraDayCharge = itemById(db, r.itemId)?.extraDayCharge;
+  const rate = extraDayCharge === "" || extraDayCharge == null ? db.settings.lateFeePerDay : extraDayCharge;
+  return Math.max(0, daysBetween(r.returnDue, r.actualReturn)) * (+rate || 0);
+}
+function rentalCharges(db, r) { const item = itemById(db, r.itemId) || {}; const fee = r.rentalFee === "" || r.rentalFee == null ? +item.rentalPrice || 0 : +r.rentalFee; return fee * (1 - (+r.discount || 0) / 100) + rentalDeposit(db, r) + rentalLateFee(db, r) + (+r.damage || 0); }
 function rentalDeposit(db, r) { const item = itemById(db, r.itemId) || {}; return r.deposit === "" || r.deposit == null ? +item.deposit || 0 : +r.deposit; }
 const soldQty = (db, id) => db.sales.filter((s) => s.itemId === id).reduce((a, s) => a + (+s.qty || 0), 0);
 const onRent = (db, id) => db.rentals.filter((r) => r.itemId === id && RENT_ACTIVE.includes(rentalStatus(r))).length;
@@ -427,7 +432,7 @@ function ItemPicker({ db, value, onChange, label = "Item" }) {
     setOpen(false);
     onChange(item.id);
   };
-  return (<Field label={label} hint="Type an item ID or name to search.">
+  return (<><Field label={label} hint="Type an item ID or name to search.">
     <div className="item-picker">
       <TextInput aria-label={label} role="combobox" aria-autocomplete="list" aria-expanded={open} aria-controls={listId} aria-activedescendant={open && matches[activeIndex] ? `${listId}-${activeIndex}` : undefined} value={query}
         onFocus={() => { setOpen(true); setActiveIndex(-1); }} onBlur={() => setOpen(false)} onChange={(e) => { setQuery(e.target.value); onChange(""); setActiveIndex(-1); setOpen(true); }}
@@ -443,7 +448,9 @@ function ItemPicker({ db, value, onChange, label = "Item" }) {
         </button>) : <div className="item-picker-empty">No matching items</div>}
       </div>}
     </div>
-  </Field>);
+  </Field>
+    <Field label="Item ID" hint="Filled from the selected inventory item."><TextInput value={value} readOnly style={{ background: C.cream }} /></Field>
+  </>);
 }
 function RecordFilters({ search, setSearch, searchLabel, status, setStatus, statusLabel, statuses }) {
   return (<div className="flex items-center gap-3 mb-3 record-filters" style={{ flexWrap: "wrap" }}>
@@ -601,7 +608,7 @@ function InventoryView({ db, update, confirmAction, canWrite, canDelete }) {
   const [idFilter, setIdFilter] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [addingCategory, setAddingCategory] = useState(false);
-  const blank = { id: "", name: "", category: "Party wear", purchaseCost: 0, salePrice: 0, discount: 0, rentalPrice: 0, rentalDiscount: 0, deposit: 1500, cleaning: 450, repair: 1000, status: "Available", stockQty: 1, purchaseDate: "" };
+  const blank = { id: "", name: "", category: "Party wear", purchaseCost: 0, salePrice: 0, discount: 0, rentalPrice: 0, rentalDiscount: 0, extraDayCharge: "", deposit: 1500, cleaning: 450, repair: 1000, status: "Available", stockQty: 1, purchaseDate: "" };
   const [form, setForm] = useState(blank);
   const categories = [...new Set([...PRODUCT_CATS, ...db.inventory.map(i => i.category)].filter(Boolean))].sort((a, b) => a.localeCompare(b));
   const duplicateId = db.inventory.some(i => i.id !== edit && i.id.trim().toLowerCase() === form.id.trim().toLowerCase());
@@ -650,6 +657,7 @@ function InventoryView({ db, update, confirmAction, canWrite, canDelete }) {
       <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr" }}>
         <Field label="Rental price"><TextInput type="number" value={form.rentalPrice} onChange={(e) => setForm({ ...form, rentalPrice: e.target.value })} /></Field>
         <Field label="Rental discount %"><TextInput type="number" min="0" max="100" value={form.rentalDiscount} onChange={(e) => setForm({ ...form, rentalDiscount: e.target.value })} /></Field>
+        <Field label="Extra day charge" hint="Per late day. Leave blank to use the default late fee; enter 0 for no charge."><TextInput type="number" min="0" step="any" value={form.extraDayCharge} onChange={(e) => setForm({ ...form, extraDayCharge: e.target.value })} /></Field>
       </div>
       <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr 1fr 1fr" }}>
         <Field label="Security deposit"><TextInput type="number" value={form.deposit} onChange={(e) => setForm({ ...form, deposit: e.target.value })} /></Field>

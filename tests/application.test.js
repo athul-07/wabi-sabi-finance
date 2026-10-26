@@ -223,6 +223,7 @@ test('browser: inventory ordering, filters, categories and immediate duplicate I
     for (const id of ['TEST-2', 'TEST-10']) {
       await page.getByRole('button', { name: 'Add item', exact: true }).click();
       await page.getByLabel('Item / outfit').fill('Filter test outfit');
+      await page.getByLabel('Extra day charge', { exact: true }).fill('250');
       await page.getByLabel('Item ID', { exact: true }).fill(' ws-001 ');
       await expect(page.getByRole('alert')).toHaveText('ID already exists');
       await expect(page.getByRole('button', { name: 'Save item' })).toBeDisabled();
@@ -258,6 +259,7 @@ test('browser: inventory ordering, filters, categories and immediate duplicate I
     await expect(page.locator('tbody tr').first().locator('td').first()).toHaveText('TEST-10');
     await page.locator('tbody tr').first().getByRole('button', { name: 'Edit record' }).click();
     await expect(page.getByRole('button', { name: 'Save item' })).toBeEnabled();
+    await expect(page.getByLabel('Extra day charge', { exact: true })).toHaveValue('250');
     await page.getByLabel('Item ID', { exact: true }).fill('TEST-2');
     await expect(page.getByRole('alert')).toHaveText('ID already exists');
   } finally {
@@ -296,6 +298,7 @@ test('browser: sales, customer reuse, ledger, rentals, return, persistence, and 
     await page.getByLabel('Item', { exact: true }).press('ArrowDown');
     await page.getByLabel('Item', { exact: true }).press('Enter');
     await expect(page.getByLabel('Item', { exact: true })).toHaveValue(/WS-001/);
+    await expect(page.getByLabel('Item ID', { exact: true })).toHaveValue('WS-001');
     await expect(page.getByLabel('Unit price')).toHaveValue('16400');
     await expect(page.getByLabel('Unit price')).toHaveAttribute('readonly', '');
     await expect(page.getByLabel('Discount %')).toHaveAttribute('readonly', '');
@@ -381,6 +384,9 @@ test('browser: sales, customer reuse, ledger, rentals, return, persistence, and 
     await page.getByLabel('Customer name').fill('Browser Customer');
     await page.getByLabel('Item', { exact: true }).fill('WS-002');
     await page.getByRole('option', { name: /WS-002 Test outfit 2/ }).click();
+    await expect(page.getByLabel('Item ID', { exact: true })).toHaveValue('WS-002');
+    await page.getByLabel('Damage charge').fill('500');
+    await expect(page.getByRole('dialog')).toContainText('Charges ₹4,400');
     await expect(page.getByLabel('Rental fee')).toHaveValue('3200');
     await expect(page.getByLabel('Rental fee')).toHaveAttribute('readonly', '');
     await expect(page.getByLabel('Discount %')).toHaveValue('25');
@@ -391,8 +397,8 @@ test('browser: sales, customer reuse, ledger, rentals, return, persistence, and 
     await page.getByRole('button', { name: 'Save rental', exact: true }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
     const rentalRow = page.getByRole('row').filter({ hasText: 'WSB-0001' });
-    await expect(rentalRow.locator('td').nth(4)).toHaveText('₹3,900');
-    await expect(rentalRow.locator('td').nth(6)).toHaveText('₹700');
+    await expect(rentalRow.locator('td').nth(4)).toHaveText('₹4,400');
+    await expect(rentalRow.locator('td').nth(6)).toHaveText('₹1,200');
     const rentalSearch = page.getByLabel('Search rentals by name or phone');
     await rentalSearch.fill('9000000000');
     await expect(page.getByText('WSB-0001', { exact: true })).toBeVisible();
