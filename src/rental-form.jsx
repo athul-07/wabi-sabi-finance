@@ -4,7 +4,7 @@ import { money, shiftDate, prices, totals, bookingError, returnError } from './r
 
 const modes = ['Cash', 'UPI', 'Bank Transfer', 'Card', 'Cheque'];
 export default function RentalForm({ db, rental, update, onClose, ui, helpers }) {
-  const { Modal, Field, TextInput, Select, Btn } = ui;
+  const { Modal, Field, TextInput, Select, Btn, ItemPicker } = ui;
   const { today, inr, available, nextId, custByPhone, toast } = helpers;
   const [id, setId] = useState(rental?.id);
   const [form, setForm] = useState(() => ({ bookingDate: today(), phone: '', customer: '', itemId: '', qty: 1, eventDate: '', pickup: '', returnDue: '', rentalFee: 0, discount: 0, deposit: 0, damage: 0, mode: 'Cash', received: '', returnMode: 'Cash', returnReceived: '', workflowVersion: 1, ...rental, dailyRate: rental?.dailyRate ?? prices(db.inventory.find(i => i.id === rental?.itemId), rental?.qty || 1, db.settings).dailyRate, actualReturn: rental ? rental.actualReturn || today() : '' }));
@@ -48,7 +48,7 @@ export default function RentalForm({ db, rental, update, onClose, ui, helpers })
         <Field label="Customer ID / name"><TextInput list="rental-customers" value={form.customer} placeholder="Select or enter a customer" onChange={e => { const c = db.customers.find(c => c.id === e.target.value); setForm({ ...form, customer: c?.name || e.target.value, phone: c?.phone || form.phone }); }} /><datalist id="rental-customers">{db.customers.map(c => <option key={c.id} value={c.id}>{c.name} · {c.phone}</option>)}</datalist></Field>
       </div>
       <div className="rental-grid item-quantity">
-        <Field label="Item ID / Name"><Select disabled={!!id || busy} value={form.itemId} onChange={e => setForm({ ...form, itemId: e.target.value, qty: 1 })}><option value="">Select an item</option>{db.inventory.filter(i => available(db, i) > 0 || i.id === form.itemId).map(i => <option key={i.id} value={i.id}>{`${i.id} · ${i.name}`}</option>)}</Select></Field>
+        <ItemPicker db={db} label="Item ID / Name" showId={false} disabled={!!id || busy} value={form.itemId} onChange={itemId => setForm({ ...form, itemId, qty: 1 })} />
         <Field label="Quantity"><Select disabled={!!id || busy} value={form.qty} onChange={e => set('qty', Number(e.target.value))}>{Array.from({ length: Math.max(1, id ? Number(form.qty) : item ? available(db, item) : 1) }, (_, i) => <option key={i + 1}>{i + 1}</option>)}</Select></Field>
       </div>
       <div className="rental-grid three">

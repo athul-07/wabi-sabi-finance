@@ -419,7 +419,8 @@ function CustomerFields({ db, form, set }) {
     <Field label="Customer name"><TextInput value={form.customer} onChange={(e) => set({ ...form, customer: e.target.value })} placeholder="Name" readOnly={!!known} style={known ? { background: C.cream } : {}} /></Field>
   </div>);
 }
-function ItemPicker({ db, value, onChange, label = "Item" }) {
+function ItemPicker({ db, value, onChange, label = "Item", disabled = false, showId = true }) {
+  const pickerRef = useRef(null);
   const selected = db.inventory.find((i) => i.id === value);
   const [query, setQuery] = useState(selected ? `${selected.id} · ${selected.name}` : "");
   const [open, setOpen] = useState(false);
@@ -427,26 +428,30 @@ function ItemPicker({ db, value, onChange, label = "Item" }) {
   const listId = React.useId();
   useEffect(() => {
     if (selected) setQuery(`${selected.id} · ${selected.name}`);
-    else if (!value && !open) setQuery("");
-  }, [selected?.id, selected?.name, value, open]);
+  }, [selected?.id, selected?.name, value]);
+  useEffect(() => {
+    if (open && activeIndex >= 0) pickerRef.current?.querySelector('.item-picker-option.active')?.scrollIntoView({ block: 'nearest' });
+  }, [open, activeIndex]);
   const items = db.inventory.filter((i) => available(db, i) > 0 || i.id === value);
-  const normalizedQuery = query.trim().toLowerCase();
+  const normalizedQuery = value ? "" : query.trim().toLowerCase();
   const matches = items.filter((item) => !normalizedQuery || `${item.id} ${item.name}`.toLowerCase().includes(normalizedQuery));
   const choose = (item) => {
+    if (disabled) return;
     setQuery(`${item.id} · ${item.name}`);
     setOpen(false);
     onChange(item.id);
   };
   return (<><Field label={label} hint="Type an item ID or name to search.">
-    <div className="item-picker">
-      <TextInput aria-label={label} role="combobox" aria-autocomplete="list" aria-expanded={open} aria-controls={listId} aria-activedescendant={open && matches[activeIndex] ? `${listId}-${activeIndex}` : undefined} value={query}
-        onFocus={() => { setOpen(true); setActiveIndex(-1); }} onBlur={() => setOpen(false)} onChange={(e) => { setQuery(e.target.value); onChange(""); setActiveIndex(-1); setOpen(true); }}
+    <div className="item-picker" ref={pickerRef} onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) setOpen(false); }}>
+      <TextInput disabled={disabled} style={{ paddingRight: 48 }} aria-label={label} role="combobox" aria-autocomplete="list" aria-expanded={open && !disabled} aria-controls={listId} aria-activedescendant={open && matches[activeIndex] ? `${listId}-${activeIndex}` : undefined} value={query}
+        onFocus={() => { if (!disabled) { setOpen(true); setActiveIndex(-1); } }} onChange={(e) => { setQuery(e.target.value); onChange(""); setActiveIndex(-1); setOpen(true); }}
         onKeyDown={(e) => {
           if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && matches.length) { e.preventDefault(); setOpen(true); setActiveIndex(i => i < 0 ? (e.key === 'ArrowDown' ? 0 : matches.length - 1) : (i + (e.key === 'ArrowDown' ? 1 : -1) + matches.length) % matches.length); }
           else if (e.key === 'Enter' && open && matches.length) { e.preventDefault(); choose(matches[activeIndex] || matches[0]); }
           else if (e.key === 'Escape' && open) { e.stopPropagation(); setOpen(false); }
         }} placeholder="Type an item ID or name" autoComplete="off" />
-      {open && <div className="item-picker-options" id={listId} role="listbox">
+      {!disabled && (query || value) && <button type="button" className="item-picker-clear" aria-label="Clear item selection" title="Clear item selection" onClick={() => { onChange(""); setQuery(""); setActiveIndex(-1); setOpen(true); pickerRef.current?.querySelector('input')?.focus(); }}><X size={16} /></button>}
+      {open && !disabled && <div className="item-picker-options" id={listId} role="listbox">
         {matches.length ? matches.map((item, index) => <button key={item.id} id={`${listId}-${index}`} type="button" role="option" aria-selected={item.id === value}
           className={`item-picker-option ${index === activeIndex ? 'active' : ''}`} onMouseEnter={() => setActiveIndex(index)} onMouseDown={(e) => e.preventDefault()} onClick={() => choose(item)}>
           <span><strong>{item.id}</strong><span>{item.name}</span></span><small>{available(db, item)} available</small>
@@ -454,7 +459,7 @@ function ItemPicker({ db, value, onChange, label = "Item" }) {
       </div>}
     </div>
   </Field>
-    <Field label="Item ID" hint="Filled from the selected inventory item."><TextInput value={value} readOnly style={{ background: C.cream }} /></Field>
+    {showId && <Field label="Item ID" hint="Filled from the selected inventory item."><TextInput value={value} readOnly style={{ background: C.cream }} /></Field>}
   </>);
 }
 function RecordFilters({ search, setSearch, searchLabel, status, setStatus, statusLabel, statuses }) {
@@ -560,7 +565,7 @@ function RentalsView({ db, update, confirmAction, canWrite, canDelete, initialOp
         </tr>);
       })}
     </TableWrap>
-    {open && canWrite && <RentalForm db={db} rental={form} update={update} onClose={() => setOpen(false)} ui={{ Modal, Field, TextInput, Select, Btn }} helpers={{ today, inr, available, nextId, custByPhone, toast }} />}
+    {open && canWrite && <RentalForm db={db} rental={form} update={update} onClose={() => setOpen(false)} ui={{ Modal, Field, TextInput, Select, Btn, ItemPicker }} helpers={{ today, inr, available, nextId, custByPhone, toast }} />}
 
   </div>);
 }

@@ -382,7 +382,12 @@ test('browser: sales, customer reuse, ledger, rentals, return, persistence, and 
     await page.getByRole('button', { name: 'New rental', exact: true }).click();
     await page.getByLabel('Phone', { exact: true }).fill('9000000000');
     await page.getByLabel('Customer ID / name').fill('Browser Customer');
-    await page.getByLabel('Item ID / Name').selectOption('WS-002');
+    await page.getByLabel('Item ID / Name').fill('WS-002');
+    await page.getByRole('option', { name: /WS-002 Test outfit 2/ }).click();
+    await page.getByRole('button', { name: 'Clear item selection' }).click();
+    await expect(page.getByLabel('Item ID / Name')).toHaveValue('');
+    await page.getByLabel('Item ID / Name').fill('Test outfit 2');
+    await page.getByRole('option', { name: /WS-002 Test outfit 2 / }).click();
     await page.getByLabel('Event date').fill('2027-02-10');
     await expect(page.getByLabel('Pickup date')).toHaveValue('2027-02-09');
     await expect(page.getByLabel('Return date')).toHaveValue('2027-02-11');
@@ -515,7 +520,9 @@ test('browser: staff have no delete controls and receive both inventory discount
     await expect(page.getByRole('button', { name: 'Delete record' })).toHaveCount(0);
     await page.getByRole('button', { name: 'Rentals', exact: true }).click();
     await page.getByRole('button', { name: 'New rental', exact: true }).click();
-    await page.getByLabel('Item ID / Name').selectOption('WS-001');
+    await page.getByLabel('Item ID / Name').fill('WS-001');
+    await page.getByLabel('Item ID / Name').press('ArrowDown');
+    await page.getByLabel('Item ID / Name').press('Enter');
     await expect(page.getByLabel('Discount %')).toHaveValue('20');
     await page.getByRole('button', { name: 'Close', exact: true }).last().click();
     const permissions = Object.fromEntries(['Dashboard', 'Sales', 'Rentals', 'Inventory', 'Customers', 'Transactions', 'Settings'].map(name => [name, 'write']));
