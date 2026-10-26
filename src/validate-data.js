@@ -33,7 +33,8 @@ module.exports = function validate(data) {
     for (const key of ['rentalFee', 'discount', 'deposit', 'received', 'damage', 'depositRefunded']) nonnegative(rental[key] ?? 0, key);
     if (Number(rental.discount || 0) > 100) throw new Error('Rental discount cannot exceed 100%.');
     if (rental.pickup && rental.returnDue && rental.returnDue < rental.pickup) throw new Error('Return due must be on or after pickup.');
-    if (!rental.actualReturn) stock.set(rental.itemId, stock.get(rental.itemId) - 1);
+    if (!Number.isInteger(Number(rental.qty || 1)) || Number(rental.qty || 1) < 1) throw new Error('Rental quantity must be a positive whole number.');
+    if (!rental.actualReturn) stock.set(rental.itemId, stock.get(rental.itemId) - Number(rental.qty || 1));
   }
   for (const [id, count] of stock) if (count < 0) throw new Error(`Insufficient stock for ${id}. Reduce the quantity or return an active rental.`);
   for (const tx of data.transactions) nonnegative(tx.amount, 'Transaction amount');

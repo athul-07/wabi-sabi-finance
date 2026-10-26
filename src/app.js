@@ -184,7 +184,7 @@ function createApp({ db, authClient }) {
           }
         }
       }
-      try { require('./validate-data')(merged); }
+      try { require('./rental-workflow').enforceRentals(merged, curData); require('./validate-data')(merged); }
       catch (error) { return res.status(400).json({ error: error.message }); }
 
       const rec = { data: merged, version: (cur.version || 0) + 1, updatedAt: new Date().toISOString(), updatedBy: req.user.username };

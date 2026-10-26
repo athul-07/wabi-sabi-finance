@@ -22,7 +22,7 @@ function PaymentMethods({ transactions, month, monthOf, inr }) {
 }
 
 export default function Overview({ db, me, onNavigate, canAccess, canCreate, onNotify, metrics }) {
-  const { today, monthOf, allTx, inr, saleBalance, rentalCharges, rentalDeposit, available, saleTotal, itemById, rentalStatus } = metrics;
+  const { today, monthOf, allTx, inr, saleBalance, rentalCharges, rentalBalance, rentalDeposit, available, saleTotal, itemById, rentalStatus } = metrics;
   const [month, setMonth] = useState(monthOf(today()));
   const [day, setDay] = useState(today());
   const [currentDate, setCurrentDate] = useState(() => new Date());
@@ -69,9 +69,9 @@ export default function Overview({ db, me, onNavigate, canAccess, canCreate, onN
   const dailyUpi = dailyModeTotals('UPI');
   const sum = (type, period = month) => tx.filter(t => t.type === type && monthOf(t.date) === period).reduce((n, t) => n + Number(t.amount || 0), 0);
   const income = sum('Income'), expense = sum('Expense');
-  const receivable = db.sales.reduce((n, s) => n + saleBalance(s), 0) + db.rentals.reduce((n, r) => n + Math.max(0, rentalCharges(db, r) - Number(r.received || 0)), 0);
+  const receivable = db.sales.reduce((n, s) => n + saleBalance(s), 0) + db.rentals.reduce((n, r) => n + Math.max(0, rentalBalance(db, r)), 0);
   const units = db.inventory.reduce((n, i) => n + available(db, i), 0);
-  const held = db.rentals.reduce((n, r) => n + Math.max(0, rentalDeposit(db, r) - Number(r.damage || 0) - Number(r.depositRefunded || 0)), 0);
+  const held = db.rentals.reduce((n, r) => n + Math.max(0, rentalDeposit(db, r) - (r.workflowVersion ? 0 : Number(r.damage || 0)) - Number(r.depositRefunded || 0)), 0);
   const investment = db.inventory.reduce((n, i) => n + Number(i.purchaseCost || 0) + Number(i.cleaning || 0) + Number(i.repair || 0), 0);
   const profit = db.sales.filter(s => monthOf(s.date) === month).reduce((n, s) => n + saleTotal(s) - Number(itemById(db, s.itemId)?.purchaseCost || 0) * Number(s.qty || 1), 0);
   const catIncome = category => tx.filter(t => t.type === 'Income' && t.category === category && monthOf(t.date) === month).reduce((n, t) => n + Number(t.amount || 0), 0);
